@@ -14,10 +14,23 @@ import {
   summarize,
   toCsv,
 } from './session.js';
-import { buildRatingChart } from './chart.js';
+import {
+  computeAccuracy,
+  computeColorStats,
+  computeLossCauses,
+  computeStreaks,
+  computeTimeOfDay,
+  computeTips,
+  monthlyRatingSeries,
+} from './insights.js';
+import { buildRatingChart, CLASS_COLORS } from './chart.js';
+import { pickQuote } from './quotes.js';
+import { renderSessionCard, downloadCanvas } from './share-card.js';
 import { createDemoState } from './demo.js';
 
 const STORAGE_KEY = 'chess-session-tracker:v2';
+const LONGTERM_KEY = 'chess-session-tracker:longterm:v1';
+const LONGTERM_TTL = 24 * 60 * 60 * 1000;
 const POLL_MS = 30_000;
 const MANUAL_COOLDOWN_MS = 4_000;
 const DAY = 86_400;
@@ -31,6 +44,12 @@ const PLACEHOLDER_AVATAR = `data:image/svg+xml,${encodeURIComponent(
      <text x="32" y="45" font-size="34" text-anchor="middle" fill="#8fb4ff">&#9822;</text>
    </svg>`,
 )}`;
+
+const SORT_LABELS = {
+  rating: 'По рейтингу',
+  games: 'По партиям',
+  score: 'По очкам',
+};
 
 const el = (id) => document.getElementById(id);
 
@@ -46,6 +65,9 @@ const ui = {
   setupError: el('setup-error'),
   sessionError: el('session-error'),
   sessionNote: el('session-note'),
+  quote: el('quote'),
+  quoteText: el('quote-text'),
+  quoteAuthor: el('quote-author'),
   sitePicker: el('site-picker'),
   avatar: el('avatar'),
   displayName: el('display-name'),
@@ -54,6 +76,9 @@ const ui = {
   providerBadge: el('provider-badge'),
   statusPill: el('status-pill'),
   statusText: el('status-text'),
+  livePill: el('live-pill'),
+  liveText: el('live-text'),
+  cardBtn: el('card-btn'),
   refreshBtn: el('refresh-btn'),
   endBtn: el('end-btn'),
   filters: el('filters'),
@@ -65,16 +90,27 @@ const ui = {
   ratingSub: el('rating-sub'),
   last10: el('last10'),
   last10Empty: el('last10-empty'),
+  tips: el('tips'),
   logCount: el('log-count'),
   logBody: el('log-body'),
   csvBtn: el('csv-btn'),
   periodChips: el('period-chips'),
   analyticsStats: el('analytics-stats'),
-  chartClassChips: el('chart-class-chips'),
   chart: el('chart'),
   chartCaption: el('chart-caption'),
+  chartLegend: el('chart-legend'),
   opponentsBody: el('opponents-body'),
+  opponentsSort: el('opponents-sort'),
   openingsBody: el('openings-body'),
+  accuracyValue: el('accuracy-value'),
+  accuracySub: el('accuracy-sub'),
+  colorStats: el('color-stats'),
+  streaks: el('streaks'),
+  lossCauses: el('loss-causes'),
+  timeOfDay: el('time-of-day'),
+  longtermChart: el('longterm-chart'),
+  longtermCaption: el('longterm-caption'),
+  longtermBtn: el('longterm-btn'),
 };
 
 let state = loadState();
@@ -87,6 +123,8 @@ let filtersKey = '';
 let freshGames = 0;
 let selectedProvider = state?.provider ?? 'chesscom';
 let noteTimer = null;
+let longterm = { status: 'idle', series: null, fetchedAt: 0, error: '' };
+let liveGame = null;
 
 /* ---------- утилиты ---------- */
 
@@ -103,6 +141,8 @@ const formatDelta = (value) => (value > 0 ? `+${value}` : value < 0 ? `−${Math
 
 const deltaClass = (value) => (value > 0 ? 'up' : value < 0 ? 'down' : 'flat');
 
+const percent = (value) => `${Math.round(value * 100)}%`;
+
 function profileLabel(url, username) {
   try {
     const parsed = new URL(url);
@@ -112,7 +152,8 @@ function profileLabel(url, username) {
   }
 }
 
-function timeAgo(timestamp) {  if (!timestamp) return 'только что';
+function timeAgo(timestamp) {
+  if (!timestamp) return 'только что';
   const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
   if (seconds < 5) return 'только что';
   if (seconds < 60) return `${seconds} с назад`;
@@ -174,6 +215,33 @@ function loadState() {
   }
 }
 
+function longtermCacheKey() {
+  return state ? `${LONGTERM_KEY}:${state.provider}:${state.username}` : '';
+}
+
+function loadLongtermCache() {
+  longterm = { status: 'idle', series: null, fetchedAt: 0, error: '' };
+  if (!state) return;
+  try {
+    const raw = localStorage.getItem(longtermCacheKey());
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Date.now() - data.fetchedAt < LONGTERM_TTL && data.series) {
+      longterm = { status: 'ready', series: data.series, fetchedAt: data.fetchedAt, error: '' };
+    }
+  } catch {
+    /* кеш не обязателен */
+  }
+}
+
+function saveLongtermCache() {
+  try {
+    localStorage.setItem(longtermCacheKey(), JSON.stringify({ fetchedAt: longterm.fetchedAt, series: longterm.series }));
+  } catch {
+    /* кеш не обязателен */
+  }
+}
+
 /* ---------- площадка и контроли ---------- */
 
 function providerClasses(providerId) {
@@ -193,13 +261,12 @@ function renderClassOptions() {
   if (!ui.timeClass) return;
   const allowed = providerClasses(selectedProvider);
   const previous = ui.timeClass.value;
-  const options = [
+  ui.timeClass.innerHTML = [
     '<option value="all">Все</option>',
     ...TIME_CLASSES.filter((timeClass) => allowed.includes(timeClass)).map(
       (timeClass) => `<option value="${timeClass}">${CLASS_LABELS[timeClass]}</option>`,
     ),
-  ];
-  ui.timeClass.innerHTML = options.join('');
+  ].join('');
   ui.timeClass.value = previous && (previous === 'all' || allowed.includes(previous)) ? previous : 'all';
 }
 
@@ -243,8 +310,7 @@ async function startSession(providerId, name, timeClass, period = 'session') {
     const games = mergeGames([], rawGames);
 
     const allowedClasses = provider.classes ?? [];
-    const chosenClass =
-      timeClass === 'all' || allowedClasses.includes(timeClass) ? timeClass : 'all';
+    const chosenClass = timeClass === 'all' || allowedClasses.includes(timeClass) ? timeClass : 'all';
 
     state = {
       v: 2,
@@ -259,7 +325,7 @@ async function startSession(providerId, name, timeClass, period = 'session') {
       games,
       timeClass: chosenClass,
       period: PERIODS.some((item) => item.id === period) ? period : 'session',
-      chartClass: null,
+      opponentsSort: 'rating',
       lastSyncAt: Date.now(),
       demo: false,
     };
@@ -267,6 +333,8 @@ async function startSession(providerId, name, timeClass, period = 'session') {
     filtersKey = '';
     lastSyncAt = Date.now();
     lastError = '';
+    liveGame = null;
+    loadLongtermCache();
     saveState();
     render();
     if (switched) {
@@ -301,9 +369,11 @@ function endSession() {
   }
   stopPolling();
   state = null;
+  liveGame = null;
   lastError = '';
   lastSyncAt = 0;
   filtersKey = '';
+  longterm = { status: 'idle', series: null, fetchedAt: 0, error: '' };
   saveState();
   render();
   ui.username?.focus();
@@ -338,6 +408,12 @@ async function refresh({ manual = false, reason = '' } = {}) {
       setTimeout(() => { freshGames = 0; }, 2600);
     }
 
+    try {
+      liveGame = (await provider.getCurrentGame?.(state.username)) ?? null;
+    } catch {
+      liveGame = null;
+    }
+
     saveState();
     render();
 
@@ -351,6 +427,29 @@ async function refresh({ manual = false, reason = '' } = {}) {
     syncing = false;
     updateStatusText();
   }
+}
+
+async function loadLongterm() {
+  if (!state || state.demo || longterm.status === 'loading') return;
+  longterm = { ...longterm, status: 'loading', error: '' };
+  renderLongterm();
+
+  try {
+    const provider = getProvider(state.provider);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const games = await provider.getGames(state.username, { fromSec: nowSec - 365 * DAY, toSec: nowSec });
+    longterm = {
+      status: 'ready',
+      series: monthlyRatingSeries(games),
+      fetchedAt: Date.now(),
+      error: '',
+    };
+    saveLongtermCache();
+  } catch (error) {
+    longterm = { status: 'error', series: null, fetchedAt: 0, error: friendlyError(error) };
+  }
+
+  renderLongterm();
 }
 
 /* ---------- отрисовка ---------- */
@@ -390,8 +489,10 @@ function render() {
   renderRating(summary);
   renderFilters();
   renderLast10(summary);
+  renderLiveGame();
   renderLog(summary);
   renderAnalytics();
+  renderInsights();
   updateStatusText();
   showAlert(ui.sessionError, lastError);
 }
@@ -439,18 +540,18 @@ function renderRating(summary) {
 }
 
 function renderFilters() {
-  const sessionGames = selectGames(state.games, {
-    period: 'session',
+  const periodGames = selectGames(state.games, {
+    period: state.period,
     timeClass: 'all',
     sinceEndTime: state.sinceEndTime,
   });
 
-  const counts = { all: sessionGames.length };
-  for (const game of sessionGames) {
+  const counts = { all: periodGames.length };
+  for (const game of periodGames) {
     counts[game.timeClass] = (counts[game.timeClass] ?? 0) + 1;
   }
 
-  if (!sessionGames.length) {
+  if (!periodGames.length) {
     ui.filters.hidden = true;
     ui.filters.innerHTML = '';
     filtersKey = 'empty';
@@ -459,7 +560,7 @@ function renderFilters() {
   ui.filters.hidden = false;
 
   const options = ['all', ...TIME_CLASSES.filter((timeClass) => counts[timeClass])];
-  const key = `${state.timeClass}|${options.map((timeClass) => `${timeClass}:${counts[timeClass]}`).join(',')}`;
+  const key = `${state.period}|${state.timeClass}|${options.map((timeClass) => `${timeClass}:${counts[timeClass]}`).join(',')}`;
   if (key === filtersKey) return;
   filtersKey = key;
 
@@ -480,7 +581,6 @@ function renderLast10(summary) {
   ui.last10Empty.hidden = games.length > 0;
   ui.last10.innerHTML = games
     .map((game) => {
-      const glyph = game.outcome === 'win' ? '+' : game.outcome === 'loss' ? '−' : '=';
       const outcome = OUTCOME_LABELS[game.outcome] ?? game.outcome;
       const color = game.color === 'white' ? 'белые' : 'чёрные';
       const rating = game.opponentRating ? ` (${game.opponentRating})` : '';
@@ -488,7 +588,7 @@ function renderLast10(summary) {
       const tip = `${outcome} · ${color} · ${game.opponent}${rating} · ${CLASS_LABELS[game.timeClass] ?? game.timeClass}${delta}`;
       const href = game.url ? ` href="${escapeHtml(game.url)}" target="_blank" rel="noreferrer"` : '';
       const tag = game.url ? 'a' : 'span';
-      return `<${tag} class="game-icon ${game.outcome}"${href} title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${glyph}</${tag}>`;
+      return `<${tag} class="game-icon ${game.outcome}"${href} title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}"></${tag}>`;
     })
     .join('');
 
@@ -496,6 +596,23 @@ function renderLast10(summary) {
     ui.last10.classList.remove('is-fresh');
     void ui.last10.offsetWidth;
     ui.last10.classList.add('is-fresh');
+  }
+}
+
+function renderLiveGame() {
+  if (!ui.livePill) return;
+  if (!liveGame) {
+    ui.livePill.hidden = true;
+    return;
+  }
+  ui.livePill.hidden = false;
+  const label = CLASS_LABELS[liveGame.timeClass] ?? 'Партия';
+  ui.liveText.textContent = liveGame.opponent ? `${label} · против ${liveGame.opponent}` : `${label} · ваш ход`;
+  if (liveGame.url) {
+    ui.liveText.href = liveGame.url;
+    ui.liveText.removeAttribute('aria-disabled');
+  } else {
+    ui.liveText.removeAttribute('href');
   }
 }
 
@@ -535,12 +652,17 @@ function renderLog(summary) {
 
 /* ---------- аналитика ---------- */
 
-function renderAnalytics() {
-  const periodGames = selectGames(state.games, {
+function periodGames() {
+  if (!state) return [];
+  return selectGames(state.games, {
     period: state.period,
     timeClass: state.timeClass,
     sinceEndTime: state.sinceEndTime,
   });
+}
+
+function renderAnalytics() {
+  const games = periodGames();
 
   renderPeriodChips();
 
@@ -549,9 +671,11 @@ function renderAnalytics() {
     ? `${summary.total} партий · ${summary.wins}–${summary.losses}–${summary.draws}`
     : 'пока пусто';
 
-  renderChart(periodGames);
-  renderOpponents(aggregateOpponents(periodGames));
-  renderOpenings(aggregateOpenings(periodGames));
+  renderChart(games);
+  renderSortChips();
+  renderOpponents(aggregateOpponents(games, { limit: 5, sortBy: state.opponentsSort ?? 'rating' }));
+  renderOpenings(aggregateOpenings(games));
+  renderTips(games);
 }
 
 function chipMarkup(items, activeValue, name) {
@@ -571,60 +695,90 @@ function renderPeriodChips() {
   ui.periodChips.innerHTML = chipMarkup(PERIODS, state.period, 'period');
 }
 
-function renderChart(periodGames) {
-  const available = [...new Set(periodGames.map((game) => game.timeClass))]
+function renderSortChips() {
+  const items = Object.entries(SORT_LABELS).map(([id, label]) => ({ id, label }));
+  const active = state.opponentsSort ?? 'rating';
+  const key = active;
+  if (ui.opponentsSort.dataset.key === key) return;
+  ui.opponentsSort.dataset.key = key;
+  ui.opponentsSort.innerHTML = items
+    .map((item) => {
+      const isActive = item.id === active;
+      return `<button type="button" class="chip chip--xs${isActive ? ' is-active' : ''}"
+        data-sort="${item.id}" role="tab" aria-selected="${isActive}">${escapeHtml(item.label)}</button>`;
+    })
+    .join('');
+}
+
+function renderChart(games) {
+  const chartGames = games.filter((game) => game.myRating != null);
+  if (!chartGames.length) {
+    ui.chart.innerHTML = '<div class="chart-empty">Нет данных о рейтинге за выбранный период</div>';
+    ui.chartCaption.textContent = '';
+    ui.chartLegend.innerHTML = '';
+    return;
+  }
+
+  const byClass = new Map();
+  for (const game of chartGames) {
+    if (!byClass.has(game.timeClass)) byClass.set(game.timeClass, []);
+    byClass.get(game.timeClass).push(game);
+  }
+
+  const classes = [...byClass.keys()]
     .filter((timeClass) => TIME_CLASSES.includes(timeClass))
     .sort((a, b) => TIME_CLASSES.indexOf(a) - TIME_CLASSES.indexOf(b));
 
-  if (!available.length) {
-    ui.chartClassChips.hidden = true;
-    ui.chartCaption.textContent = '';
-    ui.chart.innerHTML = '<div class="chart-empty">Нет партий за выбранный период</div>';
-    return;
-  }
+  const toPoint = (game) => ({
+    value: game.myRating,
+    endTime: game.endTime,
+    outcome: game.outcome,
+    opponent: game.opponent,
+    ratingDiff: game.ratingDiff,
+  });
 
-  let chartClass = state.chartClass && available.includes(state.chartClass) ? state.chartClass : null;
-  if (!chartClass && state.timeClass !== 'all' && available.includes(state.timeClass)) {
-    chartClass = state.timeClass;
-  }
-  if (!chartClass) {
-    const counts = new Map();
-    for (const game of periodGames) {
-      if (game.myRating == null) continue;
-      counts.set(game.timeClass, (counts.get(game.timeClass) ?? 0) + 1);
+  if (state.timeClass === 'all' && classes.length > 1) {
+    const series = classes
+      .filter((timeClass) => byClass.get(timeClass).length >= 2)
+      .map((timeClass) => ({
+        label: CLASS_LABELS[timeClass],
+        timeClass,
+        color: CLASS_COLORS[timeClass],
+        points: byClass.get(timeClass).map(toPoint).slice(-CHART_POINTS_LIMIT),
+      }));
+
+    if (series.length >= 2) {
+      ui.chart.innerHTML = buildRatingChart(series, { showOutcomes: false });
+      ui.chartCaption.textContent = `${chartGames.length} партий · ${series.length} контроля на графике`;
+      ui.chartLegend.innerHTML = series
+        .map(
+          (item) =>
+            `<span class="legend-item"><span class="legend-dot" style="background:${item.color}"></span>${escapeHtml(item.label)}</span>`,
+        )
+        .join('');
+      return;
     }
-    chartClass = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? available[0];
   }
 
-  if (state.chartClass !== chartClass) state.chartClass = chartClass;
+  const targetClass =
+    state.timeClass !== 'all'
+      ? state.timeClass
+      : classes.slice().sort((a, b) => byClass.get(b).length - byClass.get(a).length)[0];
 
-  ui.chartClassChips.hidden = available.length < 2;
-  const chipsKey = available.join(',') + `|${chartClass}`;
-  if (ui.chartClassChips.dataset.key !== chipsKey) {
-    ui.chartClassChips.dataset.key = chipsKey;
-    ui.chartClassChips.innerHTML = chipMarkup(
-      available.map((timeClass) => ({ id: timeClass, label: CLASS_LABELS[timeClass] ?? timeClass })),
-      chartClass,
-      'chart-class',
-    );
-  }
-
-  const games = periodGames.filter((game) => game.timeClass === chartClass);
-  const points = chartSeries(games);
-  const shown = points.slice(-CHART_POINTS_LIMIT);
-
-  if (!shown.length) {
+  const points = chartSeries(byClass.get(targetClass) ?? []).slice(-CHART_POINTS_LIMIT);
+  if (!points.length) {
     ui.chart.innerHTML = '<div class="chart-empty">Нет данных о рейтинге за выбранный период</div>';
     ui.chartCaption.textContent = '';
+    ui.chartLegend.innerHTML = '';
     return;
   }
 
-  const first = shown[0];
-  const last = shown[shown.length - 1];
+  const first = points[0];
+  const last = points[points.length - 1];
   const delta = last.value - first.value;
-  const suffix = points.length > shown.length ? ` (последние ${shown.length})` : '';
-  ui.chartCaption.textContent = `${first.value} → ${last.value} (${formatDelta(delta)}) · ${points.length} партий${suffix}`;
-  ui.chart.innerHTML = buildRatingChart(shown);
+  ui.chart.innerHTML = buildRatingChart(points);
+  ui.chartCaption.textContent = `${first.value} → ${last.value} (${formatDelta(delta)}) · ${points.length} партий · ${CLASS_LABELS[targetClass] ?? ''}`;
+  ui.chartLegend.innerHTML = '';
 }
 
 function renderOpponents(rows) {
@@ -656,10 +810,9 @@ function renderOpenings(rows) {
   ui.openingsBody.innerHTML = rows
     .map((row) => {
       const eco = row.eco ? `<span class="eco">${escapeHtml(row.eco)}</span>` : '';
-      const name = row.name ?? 'Без дебюта';
       const score = Math.round(row.score * 100);
       return `<tr>
-        <td class="cell-opening">${eco}<span class="opening-name">${escapeHtml(name)}</span></td>
+        <td class="cell-opening">${eco}<span class="opening-name">${escapeHtml(row.name ?? 'Без дебюта')}</span></td>
         <td class="mono num">${row.games}</td>
         <td class="mono small">${row.wins}–${row.losses}–${row.draws}</td>
         <td class="mono num ${score >= 50 ? 'up' : 'down'}">${score}%</td>
@@ -667,6 +820,172 @@ function renderOpenings(rows) {
     })
     .join('');
 }
+
+function renderTips(games) {
+  const tips = computeTips({
+    games,
+    accuracy: computeAccuracy(games),
+    colorStats: computeColorStats(games),
+    lossCauses: computeLossCauses(games),
+    timeOfDay: computeTimeOfDay(games),
+  });
+
+  if (!tips.length) {
+    ui.tips.hidden = true;
+    ui.tips.textContent = '';
+    return;
+  }
+
+  ui.tips.hidden = false;
+  ui.tips.textContent = tips.join(' ');
+}
+
+/* ---------- дополнительные блоки ---------- */
+
+function renderInsights() {
+  const games = periodGames();
+
+  const accuracy = computeAccuracy(games);
+  if (accuracy.avg == null) {
+    ui.accuracyValue.textContent = '—';
+    ui.accuracyValue.className = 'insight-value flat';
+    ui.accuracySub.textContent = 'Нет данных о точности за период';
+  } else {
+    ui.accuracyValue.textContent = `${accuracy.avg}%`;
+    ui.accuracyValue.className = `insight-value ${accuracy.avg >= 75 ? 'up' : accuracy.avg < 65 ? 'down' : ''}`;
+    const parts = [`по ${accuracy.games} партиям`];
+    if (accuracy.winAvg != null) parts.push(`в победах ${accuracy.winAvg}%`);
+    if (accuracy.lossAvg != null) parts.push(`в поражениях ${accuracy.lossAvg}%`);
+    ui.accuracySub.textContent = parts.join(' · ');
+  }
+
+  renderColorStats(games);
+  renderStreaks(games);
+  renderLossCauses(games);
+  renderTimeOfDay(games);
+  renderLongterm();
+}
+
+function renderColorStats(games) {
+  const stats = computeColorStats(games);
+  ui.colorStats.innerHTML = stats
+    .map((row) => {
+      const label = row.color === 'white' ? 'Белые' : 'Чёрные';
+      return `<div class="color-row">
+        <span>${label}</span>
+        <span class="color-bar"><span style="width:${Math.round(row.score * 100)}%; background:${row.color === 'white' ? 'var(--win)' : 'var(--accent)'}"></span></span>
+        <span class="color-value">${row.games ? percent(row.score) : '—'} <span class="color-games">${row.games}</span></span>
+      </div>`;
+    })
+    .join('');
+}
+
+function renderStreaks(games) {
+  const streaks = computeStreaks(games);
+  const current =
+    streaks.current.outcome === 'win'
+      ? `+${streaks.current.count}`
+      : streaks.current.outcome === 'loss'
+        ? `−${streaks.current.count}`
+        : '0';
+
+  const rows = [
+    ['Сейчас', streaks.current.count ? `${current} ${OUTCOME_LABELS[streaks.current.outcome] ?? ''}` : '—'],
+    ['Лучшая серия побед', `${streaks.bestWin}`],
+    ['Без поражений', `${streaks.bestUnbeaten}`],
+  ];
+
+  ui.streaks.innerHTML = rows
+    .map(
+      ([label, value]) =>
+        `<div class="streak-row"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`,
+    )
+    .join('');
+}
+
+function renderLossCauses(games) {
+  const causes = computeLossCauses(games);
+  if (!causes.total) {
+    ui.lossCauses.innerHTML = '<div class="insight-sub">Поражений за период нет</div>';
+    return;
+  }
+
+  ui.lossCauses.innerHTML = causes.items
+    .map(
+      (item) => `<div class="cause">
+        <div class="cause-head"><span>${escapeHtml(item.label)}</span><b>${item.games} · ${percent(item.share)}</b></div>
+        <div class="cause-bar"><span style="width:${Math.round(item.share * 100)}%"></span></div>
+      </div>`,
+    )
+    .join('');
+}
+
+function renderTimeOfDay(games) {
+  const buckets = computeTimeOfDay(games).filter((bucket) => bucket.games > 0);
+
+  if (!buckets.length) {
+    ui.timeOfDay.innerHTML = '<div class="insight-sub">Пока нет партий за период</div>';
+    return;
+  }
+
+  ui.timeOfDay.innerHTML = buckets
+    .map(
+      (bucket) => `<div class="tod-row">
+        <span>${bucket.label}</span>
+        <span class="tod-bar"><span style="width:${Math.round(bucket.score * 100)}%"></span></span>
+        <span class="tod-value">${percent(bucket.score)}</span>
+        <span class="tod-games">${bucket.games}</span>
+      </div>`,
+    )
+    .join('');
+}
+
+function renderLongterm() {
+  if (!ui.longtermBtn) return;
+
+  const loading = longterm.status === 'loading';
+  ui.longtermBtn.disabled = loading || !state || state.demo;
+  ui.longtermBtn.textContent = loading ? 'Загружаю…' : 'За 12 месяцев';
+
+  if (longterm.series) {
+    const classes =
+      state.timeClass === 'all'
+        ? Object.keys(longterm.series).filter((timeClass) => TIME_CLASSES.includes(timeClass))
+        : [state.timeClass];
+
+    const series = classes
+      .filter((timeClass) => (longterm.series[timeClass] ?? []).length)
+      .map((timeClass) => ({
+        label: CLASS_LABELS[timeClass],
+        timeClass,
+        color: CLASS_COLORS[timeClass],
+        points: longterm.series[timeClass],
+      }));
+
+    if (series.length) {
+      ui.longtermChart.innerHTML = buildRatingChart(series, { height: 220, showOutcomes: false });
+      const parts = series.map((item) => {
+        const first = item.points[0];
+        const last = item.points[item.points.length - 1];
+        return `${item.label}: ${first.value} → ${last.value}`;
+      });
+      ui.longtermCaption.textContent = `${parts.join(' · ')} · закешировано ${timeAgo(longterm.fetchedAt)}`;
+      return;
+    }
+  }
+
+  if (longterm.status === 'error') {
+    ui.longtermChart.innerHTML = `<div class="chart-empty">${escapeHtml(longterm.error)}</div>`;
+    ui.longtermCaption.textContent = '';
+    return;
+  }
+
+  ui.longtermChart.innerHTML =
+    '<div class="chart-empty">Нажмите «За 12 месяцев», чтобы подгрузить историю рейтинга.</div>';
+  ui.longtermCaption.textContent = '';
+}
+
+/* ---------- статус, карточка, CSV ---------- */
 
 function updateStatusText() {
   if (!state || !ui.statusText || !ui.statusPill) return;
@@ -688,6 +1007,29 @@ function updateStatusText() {
   }
   ui.statusPill.dataset.tone = 'live';
   ui.statusText.textContent = `обновлено ${timeAgo(lastSyncAt)}`;
+}
+
+async function downloadCard() {
+  if (!state) return;
+  const summary = summarize(state, { timeClass: state.timeClass, period: 'session' });
+  const classes = summary.byClass.filter((bucket) => bucket.games > 0);
+  const single = classes.length === 1 ? classes[0] : null;
+
+  const canvas = renderSessionCard({
+    displayName: state.displayName || state.username,
+    providerLabel: PROVIDER_LABELS[state.provider] ?? '',
+    wins: summary.wins,
+    losses: summary.losses,
+    draws: summary.draws,
+    delta: single?.delta ?? null,
+    ratingFrom: single?.anchor ?? null,
+    ratingTo: single?.current ?? null,
+    last10: summary.last10.map((game) => game.outcome),
+    dateLabel: new Date().toLocaleDateString('ru-RU'),
+  });
+
+  const date = new Date().toISOString().slice(0, 10);
+  await downloadCanvas(canvas, `chess-session-${state.provider}-${state.username}-${date}.png`);
 }
 
 function downloadCsv() {
@@ -744,14 +1086,16 @@ ui.periodChips.addEventListener('click', (event) => {
   render();
 });
 
-ui.chartClassChips.addEventListener('click', (event) => {
-  const button = event.target.closest('button[data-chart-class]');
+ui.opponentsSort.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-sort]');
   if (!button || !state) return;
-  state.chartClass = button.dataset.chartClass;
+  state.opponentsSort = button.dataset.sort;
   saveState();
   render();
 });
 
+ui.longtermBtn.addEventListener('click', loadLongterm);
+ui.cardBtn.addEventListener('click', downloadCard);
 ui.refreshBtn.addEventListener('click', () => refresh({ manual: true }));
 ui.endBtn.addEventListener('click', endSession);
 
@@ -779,6 +1123,10 @@ setInterval(updateStatusText, 1000);
   if (presetSite && PROVIDER_IDS.includes(presetSite)) selectedProvider = presetSite;
   if (presetUser) ui.username.value = presetUser.trim();
 
+  const quote = pickQuote();
+  if (ui.quoteText) ui.quoteText.textContent = `«${quote.text}»`;
+  if (ui.quoteAuthor) ui.quoteAuthor.textContent = quote.author;
+
   if (params.get('demo') === '1') {
     state = createDemoState();
     selectedProvider = state.provider;
@@ -786,6 +1134,7 @@ setInterval(updateStatusText, 1000);
   } else if (state) {
     selectedProvider = state.provider;
     lastSyncAt = Date.now();
+    loadLongtermCache();
   } else {
     lastSyncAt = Date.now();
   }

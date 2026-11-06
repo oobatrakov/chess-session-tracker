@@ -55,15 +55,19 @@ const RAPID = [
 
 const MY_RESULT = { win: 'win', loss: 'resigned', draw: 'agreed' };
 const THEIR_RESULT = { win: 'resigned', loss: 'win', draw: 'agreed' };
+const LOSS_TERMINATION = ['resign', 'time', 'mate'];
 
 export function createDemoState() {
   const nowSec = Math.floor(Date.now() / 1000);
   const games = [];
   let clock = nowSec - (BLITZ.length + RAPID.length) * 420;
+  let lossIndex = 0;
 
   const push = (timeClass, outcome, myRating, index) => {
     const [opponent, opponentRating] = OPPONENTS[index % OPPONENTS.length];
     const opening = index % 7 === 6 ? null : OPENINGS[index % OPENINGS.length];
+    const termination =
+      outcome === 'loss' ? LOSS_TERMINATION[lossIndex++ % LOSS_TERMINATION.length] : outcome === 'win' ? 'win' : 'draw';
     clock += 420;
     games.push({
       id: `demo:${timeClass}:${index}`,
@@ -79,6 +83,8 @@ export function createDemoState() {
       opponentRating,
       opponentResult: THEIR_RESULT[outcome],
       opening,
+      accuracy: 62 + ((index * 7) % 26),
+      termination,
       source: 'chesscom',
     });
   };

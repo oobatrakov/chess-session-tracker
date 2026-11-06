@@ -1,6 +1,15 @@
-// График рейтинга: чистый SVG без библиотек.
+// График рейтинга: чистый SVG без библиотек. Поддерживает несколько линий (по контролям).
 
 import { OUTCOME_LABELS } from './session.js';
+
+export const CLASS_COLORS = {
+  bullet: '#ffb454',
+  blitz: '#6ea8ff',
+  rapid: '#3ddc84',
+  classical: '#c084fc',
+  daily: '#f2c14e',
+  unknown: '#93a4bd',
+};
 
 const PAD = { top: 16, right: 14, bottom: 26, left: 46 };
 
@@ -31,30 +40,40 @@ const sameDay = (first, second) =>
   new Date(first * 1000).toDateString() === new Date(second * 1000).toDateString();
 
 /**
- * @param {{value:number,outcome:string,endTime:number,opponent:string,ratingDiff:number|null}[]} points
- * @returns {string} SVG-разметка (пустая строка, если данных нет)
+ * @param {Array} input либо массив точек [{value,endTime,outcome}], либо массив серий
+ *   [{label, color, points:[{value,endTime,outcome}]}]
+ * @param {{width?:number,height?:number,showOutcomes?:boolean}} options
  */
-export function buildRatingChart(points, { width = 820, height = 250 } = {}) {
-  if (!Array.isArray(points) || points.length === 0) return '';
+export function buildRatingChart(input, options = {}) {
+  const { width = 820, height = 250, showOutcomes = true } = options;
+
+  let series = Array.isArray(input) ? input : [];
+  if (series.length && series[0]?.value !== undefined) {
+    series = [{ label: 'Рейтинг', color: CLASS_COLORS.blitz, points: series }];
+  }
+  series = series.filter((item) => Array.isArray(item?.points) && item.points.length);
+  if (!series.length) return '';
+
+  const points = series.flatMap((item) => item.points);
+  const times = points.map((point) => point.endTime ?? 0);
+  const minTime = Math.min(...times);
+  const maxTime = Math.max(...times);
+  const values = points.map((point) => point.value);
 
   const innerWidth = width - PAD.left - PAD.right;
   const innerHeight = height - PAD.top - PAD.bottom;
 
-  const values = points.map((point) => point.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 20;
   const yMin = min - span * 0.15;
   const yMax = max + span * 0.15;
 
-  const xAt = (index) =>
-    PAD.left + (points.length === 1 ? innerWidth / 2 : (index / (points.length - 1)) * innerWidth);
+  const xAt = (time) => {
+    if (points.length === 1 || maxTime === minTime) return PAD.left + innerWidth / 2;
+    return PAD.left + ((time - minTime) / (maxTime - minTime)) * innerWidth;
+  };
   const yAt = (value) => PAD.top + (1 - (value - yMin) / (yMax - yMin)) * innerHeight;
-
-  const line = points
-    .map((point, index) => `${index === 0 ? 'M' : 'L'}${xAt(index).toFixed(1)},${yAt(point.value).toFixed(1)}`)
-    .join(' ');
-  const area = `${line} L${xAt(points.length - 1).toFixed(1)},${(PAD.top + innerHeight).toFixed(1)} L${xAt(0).toFixed(1)},${(PAD.top + innerHeight).toFixed(1)} Z`;
 
   const gridRows = 4;
   const grid = Array.from({ length: gridRows + 1 }, (_, index) => {
@@ -66,30 +85,49 @@ export function buildRatingChart(points, { width = 820, height = 250 } = {}) {
     );
   }).join('');
 
+  const multi = series.length > 1;
   const radius = points.length > 140 ? 2.2 : points.length > 60 ? 3.2 : 4.2;
 
-  const dots = points
-    .map((point, index) => {
-      const diff =
-        point.ratingDiff == null
-          ? ''
-          : ` · ${point.ratingDiff > 0 ? '+' : ''}${point.ratingDiff}`;
-      const tip = `${formatTooltipDate(point.endTime)} · ${OUTCOME_LABELS[point.outcome] ?? point.outcome} · ${point.opponent}${diff} · рейтинг ${point.value}`;
-      return `<circle class="chart-point ${point.outcome}" cx="${xAt(index).toFixed(1)}" cy="${yAt(point.value).toFixed(1)}" r="${radius}"><title>${escapeXml(tip)}</title></circle>`;
+  const paths = series
+    .map((item) => {
+      const line = item.points
+        .map((point, index) => `${index === 0 ? 'M' : 'L'}${xAt(point.endTime ?? 0).toFixed(1)},${yAt(point.value).toFixed(1)}`)
+        .join(' ');
+      const color = item.color ?? CLASS_COLORS[item.timeClass] ?? CLASS_COLORS.unknown;
+      return `<path class="chart-line" d="${line}" stroke="${color}"/>`;
     })
     .join('');
 
-  const first = points[0];
-  const last = points[points.length - 1];
-  const axisFormat = sameDay(first.endTime, last.endTime) ? formatTime : formatDate;
+  const dots = showOutcomes && !multi
+    ? series[0].points
+        .map((point) => {
+          const diff =
+            point.ratingDiff == null ? '' : ` · ${point.ratingDiff > 0 ? '+' : ''}${point.ratingDiff}`;
+          const tip = `${formatTooltipDate(point.endTime)} · ${OUTCOME_LABELS[point.outcome] ?? point.outcome} · ${point.opponent ?? ''}${diff} · рейтинг ${point.value}`;
+          return `<circle class="chart-point ${point.outcome}" cx="${xAt(point.endTime).toFixed(1)}" cy="${yAt(point.value).toFixed(1)}" r="${radius}"><title>${escapeXml(tip)}</title></circle>`;
+        })
+        .join('')
+    : series
+        .filter((item) => item.points.length === 1)
+        .map((item) => {
+          const point = item.points[0];
+          const color = item.color ?? CLASS_COLORS.unknown;
+          return `<circle cx="${xAt(point.endTime).toFixed(1)}" cy="${yAt(point.value).toFixed(1)}" r="5" fill="${color}"/>`;
+        })
+        .join('');
+
+  const axisFormat = sameDay(minTime, maxTime) ? formatTime : formatDate;
+  const last = series[0].points[series[0].points.length - 1];
+  const summary = multi
+    ? `${series.length} контролей, ${points.length} точек`
+    : `${points.length} партий, с ${series[0].points[0].value} до ${last.value}`;
 
   return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img"
-      aria-label="График рейтинга: ${points.length} партий, с ${first.value} до ${last.value}">
+      aria-label="График рейтинга: ${escapeXml(summary)}">
     <g class="chart-grid">${grid}</g>
-    <path class="chart-area" d="${area}"/>
-    <path class="chart-line" d="${line}"/>
+    ${paths}
     ${dots}
-    <text class="chart-axis" x="${xAt(0)}" y="${height - 8}" text-anchor="start">${axisFormat(first.endTime)}</text>
-    <text class="chart-axis" x="${xAt(points.length - 1)}" y="${height - 8}" text-anchor="end">${axisFormat(last.endTime)}</text>
+    <text class="chart-axis" x="${PAD.left}" y="${height - 8}" text-anchor="start">${axisFormat(minTime)}</text>
+    <text class="chart-axis" x="${width - PAD.right}" y="${height - 8}" text-anchor="end">${axisFormat(maxTime)}</text>
   </svg>`;
 }

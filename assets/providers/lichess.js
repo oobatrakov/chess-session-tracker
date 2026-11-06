@@ -1,7 +1,7 @@
 // Провайдер Lichess: открытый API, без ключа, CORS открыт.
 // Бонус: каждая партия содержит точный ratingDiff и готовый дебют (ECO + название).
 
-import { fetchJson, fetchNdjson } from '../http.js';
+import { fetchJson, fetchNdjson, fetchText } from '../http.js';
 import { normName, toRating } from '../session.js';
 
 export const id = 'lichess';
@@ -22,6 +22,26 @@ const SPEED_MAP = {
 };
 
 const SKIP_STATUS = new Set(['aborted', 'noStart', 'created', 'started']);
+
+const TERMINATION_BY_STATUS = {
+  resign: 'resign',
+  outoftime: 'time',
+  timeout: 'time',
+  mate: 'mate',
+  draw: 'draw',
+  stalemate: 'draw',
+  cheat: 'other',
+  unknown: 'other',
+};
+
+export function terminationOf(status) {
+  return TERMINATION_BY_STATUS[status] ?? 'other';
+}
+
+function toAccuracy(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 && number <= 100 ? Math.round(number * 10) / 10 : null;
+}
 
 export function normalizeGame(raw, username) {
   if (!raw || typeof raw !== 'object') return null;
@@ -68,6 +88,8 @@ export function normalizeGame(raw, username) {
     opponentRating: toRating(theirs.rating),
     opponentResult: winner ? (winner === side ? 'loss' : 'win') : 'draw',
     opening: raw.opening ? { eco: raw.opening.eco ?? null, name: raw.opening.name ?? null } : null,
+    accuracy: toAccuracy(raw.analysis?.[side]?.accuracy ?? raw.accuracy),
+    termination: terminationOf(raw.status),
     source: id,
   };
 }
@@ -121,4 +143,33 @@ export async function getGames(username, { fromSec, toSec, signal } = {}) {
     if (game) games.push(game);
   }
   return games;
+}
+
+/** Партия, которая идёт прямо сейчас (если есть). */
+export async function getCurrentGame(username, options = {}) {
+  try {
+    const text = await fetchText(`${API}/user/${segment(username)}/current-game`, {
+      ...options,
+      headers: { Accept: 'application/x-ndjson', ...(options.headers ?? {}) },
+    });
+    const line = text.split('\n').find((item) => item.trim());
+    if (!line) return null;
+
+    const raw = JSON.parse(line);
+    const me = normName(username);
+    const side =
+      normName(raw.players?.white?.user?.id) === me || normName(raw.players?.white?.user?.name) === me
+        ? 'white'
+        : 'black';
+    const theirs = raw.players?.[side === 'white' ? 'black' : 'white'];
+
+    return {
+      url: `https://lichess.org/${raw.id}`,
+      opponent: String(theirs?.user?.name ?? '—'),
+      timeClass: SPEED_MAP[raw.speed] ?? 'unknown',
+      color: side,
+    };
+  } catch {
+    return null;
+  }
 }

@@ -188,7 +188,8 @@ export function summarize(state, options = {}) {
 }
 
 /** Топ соперников: игры, В/П/Н, процент очков, средний рейтинг. */
-export function aggregateOpponents(games, limit = 5) {
+export function aggregateOpponents(games, options = {}) {
+  const { limit = 5, sortBy = 'games' } = typeof options === 'number' ? { limit: options } : options;
   const map = new Map();
 
   for (const game of games ?? []) {
@@ -209,6 +210,13 @@ export function aggregateOpponents(games, limit = 5) {
     }
   }
 
+  const comparators = {
+    games: (a, b) => b.games - a.games || b.score - a.score,
+    rating: (a, b) => (b.avgRating ?? 0) - (a.avgRating ?? 0) || b.games - a.games,
+    score: (a, b) => b.score - a.score || b.games - a.games,
+  };
+  const compare = comparators[sortBy] ?? comparators.games;
+
   return [...map.values()]
     .map((entry) => ({
       name: entry.name,
@@ -219,7 +227,7 @@ export function aggregateOpponents(games, limit = 5) {
       avgRating: entry.ratingCount ? Math.round(entry.ratingSum / entry.ratingCount) : null,
       score: entry.games ? (entry.wins + entry.draws * 0.5) / entry.games : 0,
     }))
-    .sort((a, b) => b.games - a.games || b.score - a.score || a.name.localeCompare(b.name, 'ru'))
+    .sort((a, b) => compare(a, b) || a.name.localeCompare(b.name, 'ru'))
     .slice(0, limit);
 }
 

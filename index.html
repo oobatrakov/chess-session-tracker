@@ -31,6 +31,11 @@
         по соперникам и дебютам.
       </p>
 
+      <blockquote class="quote" id="quote">
+        <p id="quote-text"></p>
+        <footer id="quote-author"></footer>
+      </blockquote>
+
       <div class="site-picker" id="site-picker" role="tablist" aria-label="Площадка"></div>
 
       <form id="start-form" class="start-form" novalidate>
@@ -76,6 +81,10 @@
             <span class="dot" aria-hidden="true"></span>
             <span id="status-text">обновлено</span>
           </span>
+          <span class="pill pill--live" id="live-pill" hidden>
+            <span class="dot" aria-hidden="true"></span>
+            <a id="live-text" href="#" target="_blank" rel="noreferrer"></a>
+          </span>
           <button class="btn btn--ghost" id="refresh-btn" type="button">Обновить</button>
           <button class="btn btn--ghost btn--danger" id="end-btn" type="button">Завершить</button>
         </div>
@@ -110,11 +119,16 @@
         </div>
 
         <div class="last-games">
-          <div class="last-games-label">Последние 10 партий <span class="muted">— свежие слева</span></div>
+          <div class="last-games-head">
+            <div class="last-games-label">Последние 10 партий <span class="muted">— свежие слева</span></div>
+            <button class="btn btn--ghost btn--sm" id="card-btn" type="button">Скачать карточку</button>
+          </div>
           <div class="last-games-icons" id="last10"></div>
           <div class="last-games-empty" id="last10-empty">Пока нет завершённых партий в этой сессии</div>
         </div>
       </div>
+
+      <p class="tips" id="tips" hidden></p>
 
       <section class="analytics card" aria-labelledby="analytics-title">
         <div class="analytics-head">
@@ -128,15 +142,18 @@
         <div class="chart-block">
           <div class="chart-head">
             <div class="chart-title">Рейтинг по партиям</div>
-            <div class="chips chips--sm" id="chart-class-chips" role="tablist" aria-label="Контроль для графика"></div>
           </div>
           <div class="chart-caption" id="chart-caption"></div>
           <div class="chart" id="chart"></div>
+          <div class="chart-legend" id="chart-legend"></div>
         </div>
 
         <div class="stats-grid">
           <div class="stats-block">
-            <h3>Соперники <span class="muted">топ-5</span></h3>
+            <div class="stats-head">
+              <h3>Соперники <span class="muted">топ-5</span></h3>
+              <div class="chips chips--xs" id="opponents-sort" role="tablist" aria-label="Сортировка соперников"></div>
+            </div>
             <div class="table-wrap table-wrap--short">
               <table class="mini">
                 <thead>
@@ -153,7 +170,9 @@
           </div>
 
           <div class="stats-block">
-            <h3>Дебюты <span class="muted">топ-5</span></h3>
+            <div class="stats-head">
+              <h3>Дебюты <span class="muted">топ-5</span></h3>
+            </div>
             <div class="table-wrap table-wrap--short">
               <table class="mini">
                 <thead>
@@ -169,6 +188,43 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <section class="insights" aria-label="Дополнительная статистика">
+        <article class="insight card">
+          <h3>Точность</h3>
+          <div class="insight-value" id="accuracy-value">—</div>
+          <div class="insight-sub" id="accuracy-sub"></div>
+        </article>
+
+        <article class="insight card">
+          <h3>Цвет</h3>
+          <div class="color-stats" id="color-stats"></div>
+        </article>
+
+        <article class="insight card">
+          <h3>Серии</h3>
+          <div class="streaks" id="streaks"></div>
+        </article>
+
+        <article class="insight card">
+          <h3>Причины поражений</h3>
+          <div class="loss-causes" id="loss-causes"></div>
+        </article>
+
+        <article class="insight card">
+          <h3>Когда играешь лучше</h3>
+          <div class="time-of-day" id="time-of-day"></div>
+        </article>
+
+        <article class="insight card insight--wide">
+          <div class="insight-head">
+            <h3>Рейтинг за год</h3>
+            <button class="btn btn--ghost btn--sm" id="longterm-btn" type="button">За 12 месяцев</button>
+          </div>
+          <div class="chart chart--small" id="longterm-chart"></div>
+          <div class="chart-caption" id="longterm-caption"></div>
+        </article>
       </section>
 
       <details class="log card" id="log">

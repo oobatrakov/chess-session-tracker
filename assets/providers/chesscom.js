@@ -10,6 +10,30 @@ export const classes = ['bullet', 'blitz', 'rapid', 'daily'];
 const API = 'https://api.chess.com/pub';
 const segment = (value) => encodeURIComponent(String(value).trim());
 
+// Причина окончания партии по результату игрока.
+const TERMINATION_BY_RESULT = {
+  resigned: 'resign',
+  timeout: 'time',
+  checkmated: 'mate',
+  abandoned: 'abandon',
+  agreed: 'draw',
+  repetition: 'draw',
+  stalemate: 'draw',
+  insufficient: 'draw',
+  '50move': 'draw',
+  timevsinsufficient: 'draw',
+  win: 'win',
+};
+
+export function terminationOf(result) {
+  return TERMINATION_BY_RESULT[result] ?? 'other';
+}
+
+function toAccuracy(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 && number <= 100 ? Math.round(number * 10) / 10 : null;
+}
+
 /**
  * Название дебюта из ссылки Chess.com:
  * .../openings/Reti-Opening-Kings-Indian-Attack-2...d6-3.Bg2 -> "Reti Opening Kings Indian Attack"
@@ -69,6 +93,8 @@ export function normalizeGame(raw, username) {
     opponentRating: toRating(theirs.rating),
     opponentResult: String(theirs.result ?? ''),
     opening: openingFromPgn(raw.pgn),
+    accuracy: toAccuracy(raw.accuracies?.[side]),
+    termination: terminationOf(mine.result),
     source: id,
   };
 }
@@ -95,7 +121,7 @@ export async function getRatings(username, options = {}) {
 /** Партии за диапазон: Chess.com отдаёт их по месяцам. */
 export async function getGames(username, { fromSec, toSec, signal } = {}) {
   const nowSec = Math.floor(Date.now() / 1000);
-  const months = monthsSince(fromSec ?? nowSec - 7 * 86400, toSec ?? nowSec, 6);
+  const months = monthsSince(fromSec ?? nowSec - 7 * 86400, toSec ?? nowSec, 13);
   const games = [];
 
   for (const [year, month] of months) {
@@ -114,4 +140,22 @@ export async function getGames(username, { fromSec, toSec, signal } = {}) {
   }
 
   return games;
+}
+
+/** Партия, в которой пользователь должен сделать ход (Chess.com отдаёт только daily). */
+export async function getCurrentGame(username, options = {}) {
+  try {
+    const data = await fetchJson(`${API}/player/${segment(username)}/games/to-move`, options);
+    const game = data?.games?.[0];
+    if (!game) return null;
+    // В ответе to-move нет имён игроков — только ссылка и дедлайн хода.
+    return {
+      url: typeof game.url === 'string' ? game.url : '',
+      opponent: '',
+      timeClass: 'daily',
+      color: null,
+    };
+  } catch {
+    return null;
+  }
 }

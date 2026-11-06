@@ -667,6 +667,15 @@ select:focus-visible {
   padding-top: 4px;
 }
 
+.last-games-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
 .last-games-label {
   font-size: 11.5px;
   font-weight: 600;
@@ -689,17 +698,48 @@ select:focus-visible {
 }
 
 .game-icon {
+  position: relative;
   display: grid;
   place-items: center;
   width: 44px;
   height: 44px;
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1;
+  font-size: 0;
   text-decoration: none;
   border: 2px solid;
   border-radius: 50%;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Значки рисуем линиями, чтобы они были ровно по центру. */
+.game-icon::before,
+.game-icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: currentColor;
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+}
+
+.game-icon::before {
+  width: 17px;
+  height: 2.5px;
+}
+
+.game-icon.win::after {
+  width: 2.5px;
+  height: 17px;
+}
+
+.game-icon.draw::before {
+  transform: translate(-50%, -50%) translateY(-3px);
+}
+
+.game-icon.draw::after {
+  width: 17px;
+  height: 2.5px;
+  transform: translate(-50%, -50%) translateY(3px);
 }
 
 .game-icon.win {
@@ -1150,6 +1190,281 @@ table.mini .num {
   font-size: 12.5px;
 }
 
+/* ---------- цитата, советы, дополнительные блоки ---------- */
+
+.quote {
+  margin: 0 0 22px;
+  padding: 15px 20px;
+  background: rgba(110, 168, 255, 0.06);
+  border-left: 3px solid rgba(110, 168, 255, 0.5);
+  border-radius: 0 14px 14px 0;
+}
+
+.quote p {
+  margin: 0;
+  font-size: clamp(15px, 2vw, 17px);
+  font-style: italic;
+  color: var(--text);
+}
+
+.quote footer {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.quote footer::before {
+  content: "— ";
+}
+
+.pill--live {
+  color: var(--win);
+  background: rgba(61, 220, 132, 0.1);
+  border-color: rgba(61, 220, 132, 0.4);
+}
+
+.pill--live .dot {
+  animation-duration: 1.6s;
+}
+
+.pill--live a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.pill--live a:hover {
+  text-decoration: underline;
+}
+
+.tips {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 13px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #ffe7b0;
+  background: rgba(246, 196, 69, 0.09);
+  border: 1px solid rgba(246, 196, 69, 0.32);
+  border-radius: 14px;
+}
+
+.tips::before {
+  content: "Совет";
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffe7b0;
+  background: rgba(246, 196, 69, 0.16);
+  border: 1px solid rgba(246, 196, 69, 0.4);
+  border-radius: 7px;
+}
+
+.stats-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chips--xs {
+  padding: 0;
+  gap: 4px;
+}
+
+.chip--xs {
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.chart--small {
+  min-height: 90px;
+}
+
+.insights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.insight {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 20px;
+}
+
+.insight h3 {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.insight--wide {
+  grid-column: 1 / -1;
+}
+
+.insight-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.insight-value {
+  font-size: clamp(34px, 5vw, 44px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.insight-sub {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.color-stats,
+.streaks,
+.loss-causes,
+.time-of-day {
+  display: grid;
+  gap: 10px;
+}
+
+.color-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+}
+
+.color-bar,
+.cause-bar,
+.tod-bar {
+  height: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.color-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--win);
+}
+
+.color-row .color-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.color-row .color-games {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.streak-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.streak-row b {
+  color: var(--text);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cause {
+  display: grid;
+  gap: 5px;
+  font-size: 13.5px;
+}
+
+.cause-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.cause-head b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cause-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 93, 108, 0.95), rgba(255, 93, 108, 0.5));
+}
+
+.tod-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 44px 24px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tod-row .tod-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.tod-row .tod-games {
+  text-align: right;
+  font-size: 12px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.tod-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
 /* ---------- адаптив ---------- */
 
 @media (max-width: 760px) {
@@ -1208,6 +1523,14 @@ table.mini .num {
 @media (max-width: 760px) {
   .stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .insights {
+    grid-template-columns: 1fr;
+  }
+
+  .insight--wide {
+    grid-column: auto;
   }
 
   .analytics-head {
