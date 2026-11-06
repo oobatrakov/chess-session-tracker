@@ -1,4 +1,6 @@
-// График рейтинга: чистый SVG без библиотек. Поддерживает несколько линий (по контролям).
+// График рейтинга: чистый SVG без библиотек.
+// Точки стоят на равных интервалах по номеру партии, а не по времени:
+// паузы между игровыми днями не растягивают график.
 
 import { OUTCOME_LABELS } from './session.js';
 
@@ -54,11 +56,17 @@ export function buildRatingChart(input, options = {}) {
   series = series.filter((item) => Array.isArray(item?.points) && item.points.length);
   if (!series.length) return '';
 
-  const points = series.flatMap((item) => item.points);
-  const times = points.map((point) => point.endTime ?? 0);
-  const minTime = Math.min(...times);
-  const maxTime = Math.max(...times);
-  const values = points.map((point) => point.value);
+  // Общий порядок партий по времени — от него считаем равномерные позиции по X.
+  const ordered = [];
+  for (const item of series) {
+    for (const point of item.points) ordered.push(point);
+  }
+  ordered.sort((a, b) => (a.endTime ?? 0) - (b.endTime ?? 0));
+  const position = new Map(ordered.map((point, index) => [point, index]));
+
+  const values = ordered.map((point) => point.value);
+  const minTime = ordered[0].endTime ?? 0;
+  const maxTime = ordered[ordered.length - 1].endTime ?? 0;
 
   const innerWidth = width - PAD.left - PAD.right;
   const innerHeight = height - PAD.top - PAD.bottom;
@@ -69,9 +77,9 @@ export function buildRatingChart(input, options = {}) {
   const yMin = min - span * 0.15;
   const yMax = max + span * 0.15;
 
-  const xAt = (time) => {
-    if (points.length === 1 || maxTime === minTime) return PAD.left + innerWidth / 2;
-    return PAD.left + ((time - minTime) / (maxTime - minTime)) * innerWidth;
+  const xAt = (point) => {
+    if (ordered.length === 1) return PAD.left + innerWidth / 2;
+    return PAD.left + (position.get(point) / (ordered.length - 1)) * innerWidth;
   };
   const yAt = (value) => PAD.top + (1 - (value - yMin) / (yMax - yMin)) * innerHeight;
 
@@ -86,15 +94,15 @@ export function buildRatingChart(input, options = {}) {
   }).join('');
 
   const multi = series.length > 1;
-  const radius = points.length > 140 ? 2.2 : points.length > 60 ? 3.2 : 4.2;
+  const radius = ordered.length > 140 ? 2.2 : ordered.length > 60 ? 3.2 : 4.2;
 
   const paths = series
     .map((item) => {
       const line = item.points
-        .map((point, index) => `${index === 0 ? 'M' : 'L'}${xAt(point.endTime ?? 0).toFixed(1)},${yAt(point.value).toFixed(1)}`)
+        .map((point, index) => `${index === 0 ? 'M' : 'L'}${xAt(point).toFixed(1)},${yAt(point.value).toFixed(1)}`)
         .join(' ');
       const color = item.color ?? CLASS_COLORS[item.timeClass] ?? CLASS_COLORS.unknown;
-      return `<path class="chart-line" d="${line}" stroke="${color}"/>`;
+      return `<path class="chart-line" style="stroke:${color}" d="${line}"/>`;
     })
     .join('');
 
@@ -104,7 +112,7 @@ export function buildRatingChart(input, options = {}) {
           const diff =
             point.ratingDiff == null ? '' : ` · ${point.ratingDiff > 0 ? '+' : ''}${point.ratingDiff}`;
           const tip = `${formatTooltipDate(point.endTime)} · ${OUTCOME_LABELS[point.outcome] ?? point.outcome} · ${point.opponent ?? ''}${diff} · рейтинг ${point.value}`;
-          return `<circle class="chart-point ${point.outcome}" cx="${xAt(point.endTime).toFixed(1)}" cy="${yAt(point.value).toFixed(1)}" r="${radius}"><title>${escapeXml(tip)}</title></circle>`;
+          return `<circle class="chart-point ${point.outcome}" cx="${xAt(point).toFixed(1)}" cy="${yAt(point.value).toFixed(1)}" r="${radius}"><title>${escapeXml(tip)}</title></circle>`;
         })
         .join('')
     : series
@@ -112,15 +120,15 @@ export function buildRatingChart(input, options = {}) {
         .map((item) => {
           const point = item.points[0];
           const color = item.color ?? CLASS_COLORS.unknown;
-          return `<circle cx="${xAt(point.endTime).toFixed(1)}" cy="${yAt(point.value).toFixed(1)}" r="5" fill="${color}"/>`;
+          return `<circle cx="${xAt(point).toFixed(1)}" cy="${yAt(point.value).toFixed(1)}" r="5" fill="${color}"/>`;
         })
         .join('');
 
   const axisFormat = sameDay(minTime, maxTime) ? formatTime : formatDate;
   const last = series[0].points[series[0].points.length - 1];
   const summary = multi
-    ? `${series.length} контролей, ${points.length} точек`
-    : `${points.length} партий, с ${series[0].points[0].value} до ${last.value}`;
+    ? `${series.length} контролей, ${ordered.length} точек`
+    : `${ordered.length} партий, с ${series[0].points[0].value} до ${last.value}`;
 
   return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img"
       aria-label="График рейтинга: ${escapeXml(summary)}">

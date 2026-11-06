@@ -121,7 +121,6 @@
         <div class="last-games">
           <div class="last-games-head">
             <div class="last-games-label">Последние 10 партий <span class="muted">— свежие слева</span></div>
-            <button class="btn btn--ghost btn--sm" id="card-btn" type="button">Скачать карточку</button>
           </div>
           <div class="last-games-icons" id="last10"></div>
           <div class="last-games-empty" id="last10-empty">Пока нет завершённых партий в этой сессии</div>
@@ -208,11 +207,6 @@
         </article>
 
         <article class="insight card">
-          <h3>Причины поражений</h3>
-          <div class="loss-causes" id="loss-causes"></div>
-        </article>
-
-        <article class="insight card">
           <h3>Когда играешь лучше</h3>
           <div class="time-of-day" id="time-of-day"></div>
         </article>
@@ -230,7 +224,6 @@
       <details class="log card" id="log">
         <summary>
           <span class="log-title">Журнал партий сессии <span class="muted" id="log-count"></span></span>
-          <button class="btn btn--ghost btn--sm" id="csv-btn" type="button">Скачать CSV</button>
         </summary>
         <div class="table-wrap">
           <table>
@@ -241,7 +234,6 @@
                 <th>Соперник</th>
                 <th>Результат</th>
                 <th>Рейтинг</th>
-                <th>Δ</th>
               </tr>
             </thead>
             <tbody id="log-body"></tbody>

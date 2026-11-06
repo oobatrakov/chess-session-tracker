@@ -1,9 +1,10 @@
-// Чистая логика: единый формат партии для Chess.com и Lichess, сводки, агрегаты.
+﻿// Чистая логика: единый формат партии для Chess.com и Lichess, сводки, агрегаты.
 // Без DOM и без сети — покрыта тестами.
 
 export const MAX_GAMES = 1200;
 
-export const TIME_CLASSES = ['bullet', 'blitz', 'rapid', 'classical', 'daily'];
+// На сайте считаем только три контроля: Daily и Classical исключены.
+export const TIME_CLASSES = ['bullet', 'blitz', 'rapid'];
 
 export const CLASS_LABELS = {
   all: 'Все',
@@ -307,46 +308,4 @@ export function monthsSince(fromSec, toSec = Math.floor(Date.now() / 1000), max 
     cursor.setUTCMonth(cursor.getUTCMonth() - 1);
   }
   return months;
-}
-
-export function toCsv(rows) {
-  const escape = (value) => {
-    const text = String(value ?? '');
-    return /[";\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-  };
-
-  const header = [
-    'Дата',
-    'Время',
-    'Контроль',
-    'Цвет',
-    'Соперник',
-    'Рейтинг соперника',
-    'Результат',
-    'Мой рейтинг',
-    'Δ рейтинга',
-    'Дебют',
-    'Ссылка',
-  ];
-
-  const lines = (rows ?? []).map((game) => {
-    const date = new Date(game.endTime * 1000);
-    return [
-      date.toLocaleDateString('ru-RU'),
-      date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-      CLASS_LABELS[game.timeClass] ?? game.timeClass,
-      game.color === 'white' ? 'белые' : 'чёрные',
-      game.opponent,
-      game.opponentRating ?? '',
-      OUTCOME_LABELS[game.outcome] ?? game.outcome,
-      game.myRating ?? '',
-      game.ratingDiff == null ? '' : game.ratingDiff,
-      game.opening?.name ?? '',
-      game.url,
-    ]
-      .map(escape)
-      .join(';');
-  });
-
-  return [header.join(';'), ...lines].join('\r\n');
 }

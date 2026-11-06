@@ -1411,31 +1411,6 @@ table.mini .num {
   font-variant-numeric: tabular-nums;
 }
 
-.cause {
-  display: grid;
-  gap: 5px;
-  font-size: 13.5px;
-}
-
-.cause-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--muted);
-}
-
-.cause-head b {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-.cause-bar span {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255, 93, 108, 0.95), rgba(255, 93, 108, 0.5));
-}
-
 .tod-row {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr) 44px 24px;

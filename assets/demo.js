@@ -1,5 +1,7 @@
 // Демо-состояние: интерфейс можно посмотреть без реальной игры (?demo=1).
 
+import { withRatingHistory } from './session.js';
+
 const KNIGHT_AVATAR = `data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
@@ -102,7 +104,7 @@ export function createDemoState() {
     startedAt: (nowSec - (BLITZ.length + RAPID.length) * 420 - 600) * 1000,
     sinceEndTime: nowSec - (BLITZ.length + RAPID.length) * 420 - 300,
     anchors: { bullet: null, blitz: 1510, rapid: 1580, classical: null, daily: null },
-    games,
+    games: withRatingHistory(games),
     timeClass: 'blitz',
     period: 'session',
     chartClass: 'blitz',

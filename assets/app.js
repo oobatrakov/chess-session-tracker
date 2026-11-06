@@ -12,7 +12,6 @@ import {
   mergeGames,
   selectGames,
   summarize,
-  toCsv,
 } from './session.js';
 import {
   computeAccuracy,
@@ -25,7 +24,6 @@ import {
 } from './insights.js';
 import { buildRatingChart, CLASS_COLORS } from './chart.js';
 import { pickQuote } from './quotes.js';
-import { renderSessionCard, downloadCanvas } from './share-card.js';
 import { createDemoState } from './demo.js';
 
 const STORAGE_KEY = 'chess-session-tracker:v2';
@@ -47,7 +45,6 @@ const PLACEHOLDER_AVATAR = `data:image/svg+xml,${encodeURIComponent(
 
 const SORT_LABELS = {
   rating: 'По рейтингу',
-  games: 'По партиям',
   score: 'По очкам',
 };
 
@@ -78,7 +75,6 @@ const ui = {
   statusText: el('status-text'),
   livePill: el('live-pill'),
   liveText: el('live-text'),
-  cardBtn: el('card-btn'),
   refreshBtn: el('refresh-btn'),
   endBtn: el('end-btn'),
   filters: el('filters'),
@@ -93,7 +89,6 @@ const ui = {
   tips: el('tips'),
   logCount: el('log-count'),
   logBody: el('log-body'),
-  csvBtn: el('csv-btn'),
   periodChips: el('period-chips'),
   analyticsStats: el('analytics-stats'),
   chart: el('chart'),
@@ -106,7 +101,6 @@ const ui = {
   accuracySub: el('accuracy-sub'),
   colorStats: el('color-stats'),
   streaks: el('streaks'),
-  lossCauses: el('loss-causes'),
   timeOfDay: el('time-of-day'),
   longtermChart: el('longterm-chart'),
   longtermCaption: el('longterm-caption'),
@@ -209,6 +203,8 @@ function loadState() {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed?.v !== 2 || !parsed.provider || !parsed.username || !Array.isArray(parsed.games)) return null;
+    // Чистим сохранённую сессию от контролей, которые больше не учитываются.
+    parsed.games = parsed.games.filter((game) => TIME_CLASSES.includes(game.timeClass));
     return parsed;
   } catch {
     return null;
@@ -620,7 +616,7 @@ function renderLog(summary) {
   ui.logCount.textContent = summary.total ? `— ${summary.total}` : '';
 
   if (!summary.rows.length) {
-    ui.logBody.innerHTML = '<tr><td colspan="6" class="log-empty">Партий пока нет. Сыграйте — и они появятся здесь.</td></tr>';
+    ui.logBody.innerHTML = '<tr><td colspan="5" class="log-empty">Партий пока нет. Сыграйте — и они появятся здесь.</td></tr>';
     return;
   }
 
@@ -637,14 +633,17 @@ function renderLog(summary) {
         ? `<a href="${escapeHtml(game.url)}" target="_blank" rel="noreferrer">${escapeHtml(game.opponent)}</a>`
         : escapeHtml(game.opponent);
       const opponentRating = game.opponentRating ? ` <span class="muted">${game.opponentRating}</span>` : '';
-      const delta = game.ratingDiff == null ? '—' : formatDelta(game.ratingDiff);
+      const rating = game.myRating ?? '—';
+      const delta =
+        game.ratingDiff == null
+          ? ''
+          : ` <span class="mono ${deltaClass(game.ratingDiff)}">${formatDelta(game.ratingDiff)}</span>`;
       return `<tr>
         <td class="mono">${escapeHtml(when)}</td>
         <td>${game.color === 'white' ? 'белые' : 'чёрные'}</td>
         <td>${opponent}${opponentRating}</td>
         <td class="res-${game.outcome}">${escapeHtml(OUTCOME_LABELS[game.outcome] ?? game.outcome)}</td>
-        <td class="mono">${game.myRating ?? '—'}</td>
-        <td class="mono ${game.ratingDiff == null ? 'flat' : deltaClass(game.ratingDiff)}">${delta}</td>
+        <td class="mono">${rating}${delta}</td>
       </tr>`;
     })
     .join('');
@@ -748,8 +747,12 @@ function renderChart(games) {
       }));
 
     if (series.length >= 2) {
+      const shown = series.reduce((sum, item) => sum + item.points.length, 0);
       ui.chart.innerHTML = buildRatingChart(series, { showOutcomes: false });
-      ui.chartCaption.textContent = `${chartGames.length} партий · ${series.length} контроля на графике`;
+      ui.chartCaption.textContent =
+        shown < chartGames.length
+          ? `${chartGames.length} партий · на графике последние ${shown}`
+          : `${chartGames.length} партий · ${series.length} контроля`;
       ui.chartLegend.innerHTML = series
         .map(
           (item) =>
@@ -861,7 +864,6 @@ function renderInsights() {
 
   renderColorStats(games);
   renderStreaks(games);
-  renderLossCauses(games);
   renderTimeOfDay(games);
   renderLongterm();
 }
@@ -899,23 +901,6 @@ function renderStreaks(games) {
     .map(
       ([label, value]) =>
         `<div class="streak-row"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`,
-    )
-    .join('');
-}
-
-function renderLossCauses(games) {
-  const causes = computeLossCauses(games);
-  if (!causes.total) {
-    ui.lossCauses.innerHTML = '<div class="insight-sub">Поражений за период нет</div>';
-    return;
-  }
-
-  ui.lossCauses.innerHTML = causes.items
-    .map(
-      (item) => `<div class="cause">
-        <div class="cause-head"><span>${escapeHtml(item.label)}</span><b>${item.games} · ${percent(item.share)}</b></div>
-        <div class="cause-bar"><span style="width:${Math.round(item.share * 100)}%"></span></div>
-      </div>`,
     )
     .join('');
 }
@@ -1009,45 +994,6 @@ function updateStatusText() {
   ui.statusText.textContent = `обновлено ${timeAgo(lastSyncAt)}`;
 }
 
-async function downloadCard() {
-  if (!state) return;
-  const summary = summarize(state, { timeClass: state.timeClass, period: 'session' });
-  const classes = summary.byClass.filter((bucket) => bucket.games > 0);
-  const single = classes.length === 1 ? classes[0] : null;
-
-  const canvas = renderSessionCard({
-    displayName: state.displayName || state.username,
-    providerLabel: PROVIDER_LABELS[state.provider] ?? '',
-    wins: summary.wins,
-    losses: summary.losses,
-    draws: summary.draws,
-    delta: single?.delta ?? null,
-    ratingFrom: single?.anchor ?? null,
-    ratingTo: single?.current ?? null,
-    last10: summary.last10.map((game) => game.outcome),
-    dateLabel: new Date().toLocaleDateString('ru-RU'),
-  });
-
-  const date = new Date().toISOString().slice(0, 10);
-  await downloadCanvas(canvas, `chess-session-${state.provider}-${state.username}-${date}.png`);
-}
-
-function downloadCsv() {
-  if (!state) return;
-  const summary = summarize(state, { timeClass: state.timeClass, period: 'session' });
-  const csv = `\uFEFF${toCsv(summary.rows)}`;
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  const date = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.download = `chess-session-${state.provider}-${state.username}-${date}.csv`;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 /* ---------- события ---------- */
 
 ui.sitePicker?.addEventListener('click', (event) => {
@@ -1095,14 +1041,8 @@ ui.opponentsSort.addEventListener('click', (event) => {
 });
 
 ui.longtermBtn.addEventListener('click', loadLongterm);
-ui.cardBtn.addEventListener('click', downloadCard);
 ui.refreshBtn.addEventListener('click', () => refresh({ manual: true }));
 ui.endBtn.addEventListener('click', endSession);
-
-ui.csvBtn.addEventListener('click', (event) => {
-  event.preventDefault();
-  downloadCsv();
-});
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && state && !state.demo) refresh();

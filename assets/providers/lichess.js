@@ -2,23 +2,22 @@
 // Бонус: каждая партия содержит точный ratingDiff и готовый дебют (ECO + название).
 
 import { fetchJson, fetchNdjson, fetchText } from '../http.js';
-import { normName, toRating } from '../session.js';
+import { TIME_CLASSES, normName, toRating } from '../session.js';
 
 export const id = 'lichess';
 export const label = 'Lichess';
-export const classes = ['bullet', 'blitz', 'rapid', 'classical', 'daily'];
+export const classes = ['bullet', 'blitz', 'rapid'];
 
 const API = 'https://lichess.org/api';
 const segment = (value) => encodeURIComponent(String(value).trim());
 
-// Скорости Lichess -> наши контроли. ultraBullet считаем bullet, correspondence — daily.
+// Быстрые контроли Lichess -> наши. ultraBullet считаем bullet.
+// Classical и correspondence на сайте не учитываются.
 const SPEED_MAP = {
   ultraBullet: 'bullet',
   bullet: 'bullet',
   blitz: 'blitz',
   rapid: 'rapid',
-  classical: 'classical',
-  correspondence: 'daily',
 };
 
 const SKIP_STATUS = new Set(['aborted', 'noStart', 'created', 'started']);

@@ -1,11 +1,11 @@
 // Провайдер Chess.com: публичный API, CORS открыт.
 
 import { fetchJson } from '../http.js';
-import { monthsSince, normName, outcomeOf, toRating } from '../session.js';
+import { TIME_CLASSES, monthsSince, normName, outcomeOf, toRating } from '../session.js';
 
 export const id = 'chesscom';
 export const label = 'Chess.com';
-export const classes = ['bullet', 'blitz', 'rapid', 'daily'];
+export const classes = ['bullet', 'blitz', 'rapid'];
 
 const API = 'https://api.chess.com/pub';
 const segment = (value) => encodeURIComponent(String(value).trim());
@@ -79,11 +79,14 @@ export function normalizeGame(raw, username) {
   const outcome = outcomeOf(mine.result);
   if (!outcome) return null;
 
+  const timeClass = typeof raw.time_class === 'string' ? raw.time_class : 'unknown';
+  if (!TIME_CLASSES.includes(timeClass)) return null;
+
   return {
     id: `cc:${raw.uuid ?? raw.url ?? endTime}`,
     url: typeof raw.url === 'string' ? raw.url : '',
     endTime,
-    timeClass: typeof raw.time_class === 'string' ? raw.time_class : 'unknown',
+    timeClass,
     rated: raw.rated !== false,
     color: side,
     outcome,
