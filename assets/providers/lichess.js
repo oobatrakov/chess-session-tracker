@@ -1,0 +1,124 @@
+// Провайдер Lichess: открытый API, без ключа, CORS открыт.
+// Бонус: каждая партия содержит точный ratingDiff и готовый дебют (ECO + название).
+
+import { fetchJson, fetchNdjson } from '../http.js';
+import { normName, toRating } from '../session.js';
+
+export const id = 'lichess';
+export const label = 'Lichess';
+export const classes = ['bullet', 'blitz', 'rapid', 'classical', 'daily'];
+
+const API = 'https://lichess.org/api';
+const segment = (value) => encodeURIComponent(String(value).trim());
+
+// Скорости Lichess -> наши контроли. ultraBullet считаем bullet, correspondence — daily.
+const SPEED_MAP = {
+  ultraBullet: 'bullet',
+  bullet: 'bullet',
+  blitz: 'blitz',
+  rapid: 'rapid',
+  classical: 'classical',
+  correspondence: 'daily',
+};
+
+const SKIP_STATUS = new Set(['aborted', 'noStart', 'created', 'started']);
+
+export function normalizeGame(raw, username) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw.variant && raw.variant !== 'standard') return null;
+  if (SKIP_STATUS.has(raw.status)) return null;
+
+  const timeClass = SPEED_MAP[raw.speed ?? raw.perf];
+  if (!timeClass) return null;
+
+  const me = normName(username);
+  const playerName = (player) =>
+    normName(player?.user?.id) === me || normName(player?.user?.name) === me;
+
+  const side = playerName(raw.players?.white)
+    ? 'white'
+    : playerName(raw.players?.black)
+      ? 'black'
+      : null;
+  if (!side) return null;
+
+  const mine = raw.players?.[side] ?? {};
+  const theirs = raw.players?.[side === 'white' ? 'black' : 'white'] ?? {};
+  const winner = raw.winner ?? null;
+  const outcome = winner ? (winner === side ? 'win' : 'loss') : 'draw';
+
+  const endTime = Math.floor(Number(raw.lastMoveAt ?? raw.createdAt ?? 0) / 1000);
+  if (!Number.isFinite(endTime) || endTime <= 0) return null;
+
+  const opponentName =
+    theirs.user?.name ??
+    (theirs.aiLevel ? `Stockfish ${theirs.aiLevel}` : 'Аноним');
+
+  return {
+    id: `li:${raw.id}`,
+    url: `https://lichess.org/${raw.id}`,
+    endTime,
+    timeClass,
+    rated: raw.rated === true,
+    color: side,
+    outcome,
+    myRating: toRating(mine.rating),
+    ratingDiff: Number.isFinite(mine.ratingDiff) ? mine.ratingDiff : null,
+    opponent: String(opponentName),
+    opponentRating: toRating(theirs.rating),
+    opponentResult: winner ? (winner === side ? 'loss' : 'win') : 'draw',
+    opening: raw.opening ? { eco: raw.opening.eco ?? null, name: raw.opening.name ?? null } : null,
+    source: id,
+  };
+}
+
+export async function getProfile(username, options = {}) {
+  const user = await fetchJson(`${API}/user/${segment(username)}`, options);
+  return {
+    username: user.username ?? String(username).trim(),
+    displayName: user.username ?? String(username).trim(),
+    avatar: '',
+    profileUrl: `https://lichess.org/@/${segment(user.username ?? username)}`,
+    title: user.title ?? null,
+  };
+}
+
+export async function getRatings(username, options = {}) {
+  const user = await fetchJson(`${API}/user/${segment(username)}`, options);
+  const perfs = user.perfs ?? {};
+  return {
+    bullet: toRating(perfs.bullet?.rating),
+    blitz: toRating(perfs.blitz?.rating),
+    rapid: toRating(perfs.rapid?.rating),
+    classical: toRating(perfs.classical?.rating),
+    daily: toRating(perfs.correspondence?.rating),
+  };
+}
+
+/** Партии за диапазон одним запросом (NDJSON). */
+export async function getGames(username, { fromSec, toSec, signal } = {}) {
+  const nowMs = Date.now();
+  const from = Math.floor((fromSec ?? Math.floor(nowMs / 1000) - 7 * 86400) * 1000);
+  const until = Math.floor((toSec ?? Math.floor(nowMs / 1000)) * 1000);
+
+  const params = new URLSearchParams({
+    since: String(from),
+    until: String(until),
+    max: '1000',
+    opening: 'true',
+    clocks: 'false',
+    evals: 'false',
+    ongoing: 'false',
+    finished: 'true',
+    // desc: при лимите 1000 нужны самые свежие партии, а не самые старые.
+    sort: 'desc',
+  });
+
+  const items = await fetchNdjson(`${API}/games/user/${segment(username)}?${params}`, { signal });
+  const games = [];
+  for (const raw of items) {
+    const game = normalizeGame(raw, username);
+    if (game) games.push(game);
+  }
+  return games;
+}
