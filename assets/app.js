@@ -84,9 +84,7 @@ const ui = {
   losses: el('losses'),
   draws: el('draws'),
   winrateValue: el('winrate-value'),
-  winrateSub: el('winrate-sub'),
   accuracyMiniValue: el('accuracy-mini-value'),
-  accuracyMiniSub: el('accuracy-mini-sub'),
   streakValue: el('streak-value'),
   streakSub: el('streak-sub'),
   colorDonuts: el('color-donuts'),
@@ -587,24 +585,20 @@ function renderScoreStats(summary) {
   const winrate = total ? Math.round((summary.wins / total) * 100) : null;
   ui.winrateValue.textContent = winrate == null ? '—' : `${winrate}%`;
   ui.winrateValue.className = `mini-value ${winrate == null ? 'flat' : winrate >= 50 ? 'up' : 'down'}`;
-  ui.winrateSub.textContent = total ? `${summary.wins} из ${total}` : 'нет партий';
 
   const accuracy = computeAccuracy(games);
   ui.accuracyMiniValue.textContent = accuracy.avg == null ? '—' : `${accuracy.avg}%`;
   ui.accuracyMiniValue.className = `mini-value ${
     accuracy.avg == null ? 'flat' : accuracy.avg >= 75 ? 'up' : accuracy.avg < 65 ? 'down' : ''
   }`.trim();
-  ui.accuracyMiniSub.textContent =
-    accuracy.avg == null
-      ? 'нет данных'
-      : `${accuracy.games} ${plural(accuracy.games, ['партия', 'партии', 'партий'])}`;
 
   const streaks = computeStreaks(games);
   const current = streaks.current;
   const streakLabels = { win: 'побед подряд', loss: 'поражений подряд', draw: 'ничьих подряд' };
   if (current.count) {
     const sign = current.outcome === 'win' ? '+' : current.outcome === 'loss' ? '−' : '=';
-    ui.streakValue.textContent = current.outcome === 'win' ? `🔥 ${sign}${current.count}` : `${sign}${current.count}`;
+    const icon = current.outcome === 'win' ? '🔥' : current.outcome === 'loss' ? '☁️' : '🤝';
+    ui.streakValue.textContent = `${icon} ${sign}${current.count}`;
     ui.streakValue.className = `mini-value ${current.outcome === 'win' ? 'up' : current.outcome === 'loss' ? 'down' : 'flat'}`;
     ui.streakSub.textContent = streakLabels[current.outcome] ?? '';
   } else {
@@ -772,9 +766,7 @@ function renderAnalytics() {
   renderPeriodChips();
 
   const summary = summarize(state, { timeClass: state.timeClass, period: state.period });
-  ui.analyticsStats.textContent = summary.total
-    ? `${summary.total} партий · ${summary.wins}–${summary.losses}–${summary.draws}`
-    : 'пока пусто';
+  ui.analyticsStats.textContent = summary.total ? 'За выбранный период' : 'пока пусто';
 
   renderChart(games);
   renderSortChips();
