@@ -96,6 +96,23 @@ export function buildRatingChart(input, options = {}) {
   const multi = series.length > 1;
   const radius = ordered.length > 140 ? 2.2 : ordered.length > 60 ? 3.2 : 4.2;
 
+  const pointKind = (point) => point.kind ?? (point.outcome ? 'game' : 'month');
+  const pointAttrs = (point, item) => {
+    const attrs = [
+      `data-rating="${point.value}"`,
+      `data-time="${point.endTime ?? 0}"`,
+      `data-kind="${pointKind(point)}"`,
+    ];
+    if (item?.label) attrs.push(`data-series="${escapeXml(item.label)}"`);
+    if (point.timeClass) attrs.push(`data-time-class="${escapeXml(point.timeClass)}"`);
+    if (point.outcome) attrs.push(`data-outcome="${escapeXml(point.outcome)}"`);
+    if (point.color) attrs.push(`data-color="${escapeXml(point.color)}"`);
+    if (point.opponent) attrs.push(`data-opponent="${escapeXml(point.opponent)}"`);
+    if (point.opponentRating != null) attrs.push(`data-opponent-rating="${point.opponentRating}"`);
+    if (point.ratingDiff != null) attrs.push(`data-diff="${point.ratingDiff}"`);
+    return attrs.join(' ');
+  };
+
   const paths = series
     .map((item) => {
       const line = item.points
@@ -124,6 +141,15 @@ export function buildRatingChart(input, options = {}) {
         })
         .join('');
 
+  const hits = series
+    .flatMap((item) =>
+      item.points.map(
+        (point) =>
+          `<circle class="chart-hit" cx="${xAt(point).toFixed(1)}" cy="${yAt(point.value).toFixed(1)}" r="11" ${pointAttrs(point, item)}/>`,
+      ),
+    )
+    .join('');
+
   const axisFormat = sameDay(minTime, maxTime) ? formatTime : formatDate;
   const last = series[0].points[series[0].points.length - 1];
   const summary = multi
@@ -135,6 +161,8 @@ export function buildRatingChart(input, options = {}) {
     <g class="chart-grid">${grid}</g>
     ${paths}
     ${dots}
+    ${hits}
+    <circle class="chart-focus" r="7" fill="none" hidden/>
     <text class="chart-axis" x="${PAD.left}" y="${height - 8}" text-anchor="start">${axisFormat(minTime)}</text>
     <text class="chart-axis" x="${width - PAD.right}" y="${height - 8}" text-anchor="end">${axisFormat(maxTime)}</text>
   </svg>`;

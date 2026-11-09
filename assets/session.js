@@ -303,6 +303,8 @@ export function chartSeries(games) {
       value: game.myRating,
       outcome: game.outcome,
       endTime: game.endTime,
+      timeClass: game.timeClass,
+      color: game.color,
       opponent: game.opponent,
       opponentRating: game.opponentRating,
       ratingDiff: game.ratingDiff,

@@ -103,6 +103,7 @@ const ui = {
   chart: el('chart'),
   chartCaption: el('chart-caption'),
   chartLegend: el('chart-legend'),
+  chartTip: el('chart-tip'),
   opponentsBody: el('opponents-body'),
   opponentsSort: el('opponents-sort'),
   openingsBody: el('openings-body'),
@@ -124,6 +125,7 @@ let lastError = '';
 let lastManualAt = 0;
 let filtersKey = '';
 let freshGames = 0;
+let chartTipTimer = null;
 let selectedProvider = state?.provider ?? 'chesscom';
 let noteTimer = null;
 let longterm = { status: 'idle', series: null, fetchedAt: 0, error: '' };
@@ -813,7 +815,85 @@ function renderSortChips() {
     .join('');
 }
 
+function hideChartTip() {
+  if (!ui.chartTip) return;
+  ui.chartTip.hidden = true;
+  document.querySelectorAll('.chart-focus').forEach((node) => node.setAttribute('hidden', ''));
+}
+
+function showChartTip(hit, clientX, clientY) {
+  if (!ui.chartTip) return;
+  const data = hit.dataset;
+  if (!data.rating) return;
+
+  const diffValue = data.diff == null || data.diff === '' ? null : Number(data.diff);
+  const diff =
+    diffValue == null || !Number.isFinite(diffValue)
+      ? ''
+      : `<span class="chart-tip-diff ${deltaClass(diffValue)}">${formatDelta(diffValue)}</span>`;
+  const outcome = data.outcome ? OUTCOME_LABELS[data.outcome] ?? data.outcome : '';
+  const color = data.color === 'white' ? 'белые' : data.color === 'black' ? 'чёрные' : '';
+  const outcomeLine = outcome
+    ? `<div class="chart-tip-outcome ${data.outcome}">${escapeHtml(outcome)}${color ? ` · ${color}` : ''}</div>`
+    : '';
+
+  const details = [];
+  if (data.opponent) {
+    details.push(`против ${escapeHtml(data.opponent)}${data.opponentRating ? ` (${data.opponentRating})` : ''}`);
+  }
+  const classLabel = data.timeClass ? CLASS_LABELS[data.timeClass] ?? data.timeClass : data.series;
+  if (classLabel) details.push(escapeHtml(classLabel));
+  const detailsLine = details.length ? `<div class="chart-tip-sub">${details.join(' · ')}</div>` : '';
+
+  const date = new Date(Number(data.time) * 1000);
+  const dateText =
+    data.kind === 'month'
+      ? date.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+      : date.toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+  ui.chartTip.innerHTML = `<div class="chart-tip-value">${escapeHtml(data.rating)}${diff}</div>${outcomeLine}${detailsLine}<div class="chart-tip-date">${escapeHtml(dateText)}</div>`;
+  ui.chartTip.hidden = false;
+
+  const rect = ui.chartTip.getBoundingClientRect();
+  let left = clientX + 14;
+  let top = clientY - rect.height - 12;
+  if (left + rect.width > window.innerWidth - 8) left = clientX - rect.width - 14;
+  if (top < 8) top = clientY + 18;
+  left = Math.max(8, Math.min(left, window.innerWidth - rect.width - 8));
+  top = Math.max(8, Math.min(top, window.innerHeight - rect.height - 8));
+  ui.chartTip.style.left = `${left}px`;
+  ui.chartTip.style.top = `${top}px`;
+
+  const focus = hit.ownerSVGElement?.querySelector('.chart-focus');
+  if (focus) {
+    focus.removeAttribute('hidden');
+    focus.setAttribute('cx', hit.getAttribute('cx'));
+    focus.setAttribute('cy', hit.getAttribute('cy'));
+  }
+}
+
+function bindChartTooltip(container) {
+  if (!container) return;
+  container.addEventListener('pointermove', (event) => {
+    const hit = event.target.closest?.('.chart-hit');
+    if (!hit) {
+      hideChartTip();
+      return;
+    }
+    showChartTip(hit, event.clientX, event.clientY);
+  });
+  container.addEventListener('pointerleave', hideChartTip);
+  container.addEventListener('pointerdown', (event) => {
+    const hit = event.target.closest?.('.chart-hit');
+    if (!hit) return;
+    showChartTip(hit, event.clientX, event.clientY);
+    clearTimeout(chartTipTimer);
+    chartTipTimer = setTimeout(hideChartTip, 2600);
+  });
+}
+
 function renderChart(games) {
+  hideChartTip();
   const chartGames = games.filter((game) => game.myRating != null);
   if (!chartGames.length) {
     ui.chart.innerHTML = '<div class="chart-empty">Нет данных о рейтинге за выбранный период</div>';
@@ -835,6 +915,8 @@ function renderChart(games) {
   const toPoint = (game) => ({
     value: game.myRating,
     endTime: game.endTime,
+    timeClass: game.timeClass,
+    color: game.color,
     outcome: game.outcome,
     opponent: game.opponent,
     ratingDiff: game.ratingDiff,
@@ -1030,6 +1112,7 @@ function renderTimeOfDay(games) {
 }
 
 function renderLongterm() {
+  hideChartTip();
   if (!ui.longtermBtn) return;
 
   const loading = longterm.status === 'loading';
@@ -1148,6 +1231,11 @@ ui.longtermBtn.addEventListener('click', loadLongterm);
 ui.refreshBtn.addEventListener('click', () => refresh({ manual: true }));
 ui.resetBtn.addEventListener('click', restartSession);
 ui.endBtn.addEventListener('click', endSession);
+
+bindChartTooltip(ui.chart);
+bindChartTooltip(ui.longtermChart);
+window.addEventListener('scroll', hideChartTip, { passive: true });
+window.addEventListener('resize', hideChartTip);
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && state && !state.demo) refresh();
