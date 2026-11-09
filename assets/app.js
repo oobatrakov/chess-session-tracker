@@ -10,6 +10,7 @@ import {
   chartSeries,
   latestEndTime,
   mergeGames,
+  restartSessionState,
   selectGames,
   summarize,
 } from './session.js';
@@ -76,11 +77,19 @@ const ui = {
   livePill: el('live-pill'),
   liveText: el('live-text'),
   refreshBtn: el('refresh-btn'),
+  resetBtn: el('reset-btn'),
   endBtn: el('end-btn'),
   filters: el('filters'),
   wins: el('wins'),
   losses: el('losses'),
   draws: el('draws'),
+  winrateValue: el('winrate-value'),
+  winrateSub: el('winrate-sub'),
+  accuracyMiniValue: el('accuracy-mini-value'),
+  accuracyMiniSub: el('accuracy-mini-sub'),
+  streakValue: el('streak-value'),
+  streakSub: el('streak-sub'),
+  colorDonuts: el('color-donuts'),
   ratingDelta: el('rating-delta'),
   ratingRows: el('rating-rows'),
   ratingSub: el('rating-sub'),
@@ -136,6 +145,15 @@ const formatDelta = (value) => (value > 0 ? `+${value}` : value < 0 ? `−${Math
 const deltaClass = (value) => (value > 0 ? 'up' : value < 0 ? 'down' : 'flat');
 
 const percent = (value) => `${Math.round(value * 100)}%`;
+
+function plural(count, forms) {
+  const tens = Math.abs(count) % 100;
+  const ones = tens % 10;
+  if (tens > 10 && tens < 20) return forms[2];
+  if (ones === 1) return forms[0];
+  if (ones >= 2 && ones <= 4) return forms[1];
+  return forms[2];
+}
 
 function profileLabel(url, username) {
   try {
@@ -375,6 +393,29 @@ function endSession() {
   ui.username?.focus();
 }
 
+/** Сбрасывает отсчёт сессии, не выходя из аккаунта: история остаётся для графиков. */
+function restartSession() {
+  if (!state || state.demo) return;
+  const played = summarize(state, { timeClass: state.timeClass, period: 'session' }).total;
+  if (
+    played > 0 &&
+    !window.confirm(
+      `Сбросить сессию? Отсчёт начнётся заново, а ${played} ${plural(played, ['партия', 'партии', 'партий'])} останется в истории для графиков.`,
+    )
+  ) {
+    return;
+  }
+
+  state = restartSessionState(state);
+  freshGames = 0;
+  lastError = '';
+  filtersKey = '';
+  saveState();
+  render();
+  showNote('Сессия сброшена: отсчёт начат заново, история осталась в аналитике.');
+  refresh({ reason: 'reset' });
+}
+
 /* ---------- загрузка партий ---------- */
 
 async function refresh({ manual = false, reason = '' } = {}) {
@@ -474,6 +515,7 @@ function render() {
     ui.providerBadge.dataset.provider = state.provider;
   }
   ui.refreshBtn.disabled = Boolean(state.demo);
+  ui.resetBtn.disabled = Boolean(state.demo);
   ui.endBtn.disabled = false;
 
   const summary = summarize(state, { timeClass: state.timeClass, period: 'session' });
@@ -483,6 +525,7 @@ function render() {
   ui.draws.textContent = String(summary.draws);
 
   renderRating(summary);
+  renderScoreStats(summary);
   renderFilters();
   renderLast10(summary);
   renderLiveGame();
@@ -535,6 +578,62 @@ function renderRating(summary) {
     .join('');
 }
 
+function renderScoreStats(summary) {
+  const games = summary.rows.slice().reverse();
+  const total = summary.total;
+
+  const winrate = total ? Math.round((summary.wins / total) * 100) : null;
+  ui.winrateValue.textContent = winrate == null ? '—' : `${winrate}%`;
+  ui.winrateValue.className = `mini-value ${winrate == null ? 'flat' : winrate >= 50 ? 'up' : 'down'}`;
+  ui.winrateSub.textContent = total ? `${summary.wins} из ${total}` : 'нет партий';
+
+  const accuracy = computeAccuracy(games);
+  ui.accuracyMiniValue.textContent = accuracy.avg == null ? '—' : `${accuracy.avg}%`;
+  ui.accuracyMiniValue.className = `mini-value ${
+    accuracy.avg == null ? 'flat' : accuracy.avg >= 75 ? 'up' : accuracy.avg < 65 ? 'down' : ''
+  }`.trim();
+  ui.accuracyMiniSub.textContent =
+    accuracy.avg == null
+      ? 'нет данных'
+      : `${accuracy.games} ${plural(accuracy.games, ['партия', 'партии', 'партий'])}`;
+
+  const streaks = computeStreaks(games);
+  const current = streaks.current;
+  const streakLabels = { win: 'побед подряд', loss: 'поражений подряд', draw: 'ничьих подряд' };
+  if (current.count) {
+    const sign = current.outcome === 'win' ? '+' : current.outcome === 'loss' ? '−' : '=';
+    ui.streakValue.textContent = current.outcome === 'win' ? `🔥 ${sign}${current.count}` : `${sign}${current.count}`;
+    ui.streakValue.className = `mini-value ${current.outcome === 'win' ? 'up' : current.outcome === 'loss' ? 'down' : 'flat'}`;
+    ui.streakSub.textContent = streakLabels[current.outcome] ?? '';
+  } else {
+    ui.streakValue.textContent = '—';
+    ui.streakValue.className = 'mini-value flat';
+    ui.streakSub.textContent = 'нет партий';
+  }
+
+  const colorStats = computeColorStats(games);
+  ui.colorDonuts.innerHTML = colorStats
+    .map((row) => {
+      const played = row.games;
+      const name = row.color === 'white' ? 'Белые' : 'Чёрные';
+      const pieceClass = row.color === 'white' ? 'white' : 'black';
+      const score = played ? Math.round(row.score * 100) : null;
+      const title = played
+        ? `${name}: ${row.wins}–${row.draws}–${row.losses} (${score}% очков)`
+        : `${name}: нет партий`;
+      const w = played ? (row.wins / played) * 100 : 0;
+      const d = played ? (row.draws / played) * 100 : 0;
+      const l = played ? (row.losses / played) * 100 : 0;
+      return `<div class="color-donut" role="img" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">
+        <span class="donut${played ? '' : ' is-empty'}" style="--w:${w}; --d:${d}; --l:${l}">
+          <b class="donut-piece ${pieceClass}" aria-hidden="true">♞</b>
+        </span>
+        <span class="donut-score">${score == null ? '—' : `${score}%`}</span>
+      </div>`;
+    })
+    .join('');
+}
+
 function renderFilters() {
   const periodGames = selectGames(state.games, {
     period: state.period,
@@ -573,10 +672,11 @@ function renderFilters() {
 }
 
 function renderLast10(summary) {
-  const games = summary.last10;
+  // Свежая партия — справа: разворачиваем список «новые первыми» в хронологию.
+  const games = summary.last10.slice().reverse();
   ui.last10Empty.hidden = games.length > 0;
   ui.last10.innerHTML = games
-    .map((game) => {
+    .map((game, index) => {
       const outcome = OUTCOME_LABELS[game.outcome] ?? game.outcome;
       const color = game.color === 'white' ? 'белые' : 'чёрные';
       const rating = game.opponentRating ? ` (${game.opponentRating})` : '';
@@ -584,7 +684,11 @@ function renderLast10(summary) {
       const tip = `${outcome} · ${color} · ${game.opponent}${rating} · ${CLASS_LABELS[game.timeClass] ?? game.timeClass}${delta}`;
       const href = game.url ? ` href="${escapeHtml(game.url)}" target="_blank" rel="noreferrer"` : '';
       const tag = game.url ? 'a' : 'span';
-      return `<${tag} class="game-icon ${game.outcome}"${href} title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}"></${tag}>`;
+      const latest = index === games.length - 1;
+      const icon = `<${tag} class="game-icon ${game.outcome} ${game.color === 'white' ? 'white' : 'black'}${latest ? ' is-latest' : ''}"${href} title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">
+        <span class="game-color" aria-hidden="true"></span>
+      </${tag}>`;
+      return latest ? `<span class="latest-wrap">${icon}</span>` : icon;
     })
     .join('');
 
@@ -1042,6 +1146,7 @@ ui.opponentsSort.addEventListener('click', (event) => {
 
 ui.longtermBtn.addEventListener('click', loadLongterm);
 ui.refreshBtn.addEventListener('click', () => refresh({ manual: true }));
+ui.resetBtn.addEventListener('click', restartSession);
 ui.endBtn.addEventListener('click', endSession);
 
 document.addEventListener('visibilitychange', () => {

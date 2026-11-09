@@ -1,4 +1,4 @@
-﻿// Чистая логика: единый формат партии для Chess.com и Lichess, сводки, агрегаты.
+// Чистая логика: единый формат партии для Chess.com и Lichess, сводки, агрегаты.
 // Без DOM и без сети — покрыта тестами.
 
 export const MAX_GAMES = 1200;
@@ -185,6 +185,31 @@ export function summarize(state, options = {}) {
     byClass: classes,
     rows: selected.slice().reverse(),
     last10: selected.slice(-10).reverse(),
+  };
+}
+
+/**
+ * Сбрасывает точку отсчёта сессии, сохраняя загруженную историю партий.
+ * Якоря рейтинга — последний известный рейтинг по каждому контролю.
+ */
+export function restartSessionState(state, nowMs = Date.now()) {
+  const nowSec = Math.floor(nowMs / 1000);
+  const anchors = {};
+  for (const timeClass of TIME_CLASSES) {
+    anchors[timeClass] = state?.anchors?.[timeClass] ?? null;
+  }
+  for (const game of state?.games ?? []) {
+    if (game?.myRating != null && TIME_CLASSES.includes(game.timeClass)) {
+      anchors[game.timeClass] = game.myRating;
+    }
+  }
+
+  return {
+    ...state,
+    startedAt: nowMs,
+    sinceEndTime: nowSec,
+    anchors,
+    lastSyncAt: nowMs,
   };
 }
 

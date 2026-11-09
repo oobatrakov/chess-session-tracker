@@ -86,6 +86,7 @@
             <a id="live-text" href="#" target="_blank" rel="noreferrer"></a>
           </span>
           <button class="btn btn--ghost" id="refresh-btn" type="button">Обновить</button>
+          <button class="btn btn--ghost" id="reset-btn" type="button">Сбросить</button>
           <button class="btn btn--ghost btn--danger" id="end-btn" type="button">Завершить</button>
         </div>
       </div>
@@ -111,16 +112,43 @@
           </div>
         </div>
 
-        <div class="rating">
-          <div class="rating-label">Рейтинг за сессию</div>
-          <div class="rating-delta" id="rating-delta">±0</div>
-          <div class="rating-rows" id="rating-rows" hidden></div>
-          <div class="rating-sub" id="rating-sub"></div>
+        <div class="score-main">
+          <div class="score-side score-side--left">
+            <div class="mini-stat">
+              <span class="mini-value" id="winrate-value">—</span>
+              <span class="mini-label">Винрейт</span>
+              <span class="mini-sub" id="winrate-sub"></span>
+            </div>
+            <div class="mini-stat">
+              <span class="mini-value" id="accuracy-mini-value">—</span>
+              <span class="mini-label">Точность</span>
+              <span class="mini-sub" id="accuracy-mini-sub"></span>
+            </div>
+          </div>
+
+          <div class="rating">
+            <div class="rating-label">Рейтинг за сессию</div>
+            <div class="rating-delta" id="rating-delta">±0</div>
+            <div class="rating-rows" id="rating-rows" hidden></div>
+            <div class="rating-sub" id="rating-sub"></div>
+          </div>
+
+          <div class="score-side score-side--right">
+            <div class="mini-stat">
+              <span class="mini-value" id="streak-value">—</span>
+              <span class="mini-label">Серия</span>
+              <span class="mini-sub" id="streak-sub"></span>
+            </div>
+            <div class="mini-stat mini-stat--color">
+              <span class="mini-label">Цвет · очки</span>
+              <div class="color-donuts" id="color-donuts" aria-label="Результат за белых и чёрных"></div>
+            </div>
+          </div>
         </div>
 
         <div class="last-games">
           <div class="last-games-head">
-            <div class="last-games-label">Последние 10 партий <span class="muted">— свежие слева</span></div>
+            <div class="last-games-label">Последние 10 партий</div>
           </div>
           <div class="last-games-icons" id="last10"></div>
           <div class="last-games-empty" id="last10-empty">Пока нет завершённых партий в этой сессии</div>
