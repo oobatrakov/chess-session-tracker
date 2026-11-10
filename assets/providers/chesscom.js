@@ -62,6 +62,33 @@ export function openingFromPgn(pgn) {
   return { eco, name };
 }
 
+/**
+ * Длительность live-партии из PGN: Chess.com кладёт StartTime/EndTime и даты.
+ * Возвращает секунды или null, если времени нет или оно подозрительное.
+ */
+export function durationFromPgn(pgn) {
+  if (!pgn) return null;
+
+  const readTime = (name) => {
+    const match = new RegExp(`\\[${name} "(\\d{2}):(\\d{2}):(\\d{2})"\\]`).exec(pgn);
+    return match ? match.slice(1).map(Number) : null;
+  };
+  const readDate = (name) => {
+    const match = new RegExp(`\\[${name} "(\\d{4})[.](\\d{2})[.](\\d{2})"\\]`).exec(pgn);
+    return match ? match.slice(1).map(Number) : null;
+  };
+
+  const startTime = readTime('StartTime') ?? readTime('UTCTime');
+  const endTime = readTime('EndTime');
+  const startDate = readDate('UTCDate') ?? readDate('Date');
+  const endDate = readDate('EndDate') ?? startDate;
+  if (!startTime || !endTime || !startDate) return null;
+
+  const toEpoch = (date, time) => Date.UTC(date[0], date[1] - 1, date[2], time[0], time[1], time[2]) / 1000;
+  const duration = toEpoch(endDate, endTime) - toEpoch(startDate, startTime);
+  return duration > 0 && duration < 6 * 3600 ? duration : null;
+}
+
 export function normalizeGame(raw, username) {
   if (!raw || typeof raw !== 'object') return null;
   if (raw.rules !== 'chess') return null;
@@ -73,6 +100,10 @@ export function normalizeGame(raw, username) {
 
   const endTime = Number(raw.end_time);
   if (!Number.isFinite(endTime) || endTime <= 0) return null;
+
+  const rawStart = Number(raw.start_time);
+  const startTime = Number.isFinite(rawStart) && rawStart > 0 ? rawStart : null;
+  const duration = startTime != null && endTime > startTime ? endTime - startTime : durationFromPgn(raw.pgn);
 
   const mine = raw[side] ?? {};
   const theirs = raw[side === 'white' ? 'black' : 'white'] ?? {};
@@ -86,6 +117,8 @@ export function normalizeGame(raw, username) {
     id: `cc:${raw.uuid ?? raw.url ?? endTime}`,
     url: typeof raw.url === 'string' ? raw.url : '',
     endTime,
+    startTime,
+    duration,
     timeClass,
     rated: raw.rated !== false,
     color: side,

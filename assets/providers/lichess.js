@@ -69,6 +69,10 @@ export function normalizeGame(raw, username) {
   const endTime = Math.floor(Number(raw.lastMoveAt ?? raw.createdAt ?? 0) / 1000);
   if (!Number.isFinite(endTime) || endTime <= 0) return null;
 
+  const startTime = Math.floor(Number(raw.createdAt ?? 0) / 1000);
+  const playedSeconds = endTime - startTime;
+  const duration = startTime > 0 && playedSeconds > 0 && playedSeconds < 6 * 3600 ? playedSeconds : null;
+
   const opponentName =
     theirs.user?.name ??
     (theirs.aiLevel ? `Stockfish ${theirs.aiLevel}` : 'Аноним');
@@ -77,6 +81,8 @@ export function normalizeGame(raw, username) {
     id: `li:${raw.id}`,
     url: `https://lichess.org/${raw.id}`,
     endTime,
+    startTime: startTime > 0 ? startTime : null,
+    duration,
     timeClass,
     rated: raw.rated === true,
     color: side,

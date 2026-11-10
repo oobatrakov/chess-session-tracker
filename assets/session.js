@@ -213,6 +213,16 @@ export function restartSessionState(state, nowMs = Date.now()) {
   };
 }
 
+/** Сумма длительности завершённых партий (секунды). */
+export function totalPlayTime(games) {
+  let total = 0;
+  for (const game of games ?? []) {
+    const seconds = Number(game?.duration);
+    if (Number.isFinite(seconds) && seconds > 0) total += seconds;
+  }
+  return total;
+}
+
 /** Топ соперников: игры, В/П/Н, процент очков, средний рейтинг. */
 export function aggregateOpponents(games, options = {}) {
   const { limit = 5, sortBy = 'games' } = typeof options === 'number' ? { limit: options } : options;

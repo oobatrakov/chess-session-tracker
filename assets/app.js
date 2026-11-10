@@ -13,6 +13,7 @@ import {
   restartSessionState,
   selectGames,
   summarize,
+  totalPlayTime,
 } from './session.js';
 import {
   computeAccuracy,
@@ -83,6 +84,8 @@ const ui = {
   wins: el('wins'),
   losses: el('losses'),
   draws: el('draws'),
+  playtime: el('playtime'),
+  playtimeValue: el('playtime-value'),
   winrateValue: el('winrate-value'),
   accuracyMiniValue: el('accuracy-mini-value'),
   streakValue: el('streak-value'),
@@ -153,6 +156,18 @@ function plural(count, forms) {
   if (ones === 1) return forms[0];
   if (ones >= 2 && ones <= 4) return forms[1];
   return forms[2];
+}
+
+function formatPlayTime(seconds) {
+  if (seconds < 60) return `${seconds} с`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    const rest = seconds % 60;
+    return minutes < 10 && rest ? `${minutes} мин ${rest} с` : `${minutes} мин`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
 }
 
 function profileLabel(url, username) {
@@ -526,6 +541,7 @@ function render() {
 
   renderRating(summary);
   renderScoreStats(summary);
+  renderPlaytime(summary);
   renderFilters();
   renderLast10(summary);
   renderLiveGame();
@@ -628,6 +644,18 @@ function renderScoreStats(summary) {
       </div>`;
     })
     .join('');
+}
+
+function renderPlaytime(summary) {
+  if (!ui.playtime || !ui.playtimeValue) return;
+  const seconds = totalPlayTime(summary.rows);
+  if (!seconds) {
+    ui.playtime.hidden = true;
+    return;
+  }
+  ui.playtime.hidden = false;
+  ui.playtimeValue.textContent = formatPlayTime(seconds);
+  ui.playtime.title = 'Сумма длительности завершённых партий сессии';
 }
 
 function renderFilters() {

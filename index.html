@@ -94,7 +94,14 @@
       <p class="note" id="session-note" hidden></p>
       <p class="alert" id="session-error" role="alert" hidden></p>
 
-      <nav class="chips" id="filters" aria-label="Контроль времени"></nav>
+      <div class="session-bar">
+        <nav class="chips" id="filters" aria-label="Контроль времени"></nav>
+        <div class="playtime" id="playtime" hidden>
+          <span class="playtime-icon" aria-hidden="true">⏱</span>
+          <span class="playtime-label">Время за игрой</span>
+          <strong class="playtime-value" id="playtime-value">—</strong>
+        </div>
+      </div>
 
       <div class="score card">
         <div class="score-metrics">

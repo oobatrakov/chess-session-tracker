@@ -70,11 +70,14 @@ export function createDemoState() {
     const opening = index % 7 === 6 ? null : OPENINGS[index % OPENINGS.length];
     const termination =
       outcome === 'loss' ? LOSS_TERMINATION[lossIndex++ % LOSS_TERMINATION.length] : outcome === 'win' ? 'win' : 'draw';
+    const duration = timeClass === 'rapid' ? 360 : 240 + (index % 3) * 30;
     clock += 420;
     games.push({
       id: `demo:${timeClass}:${index}`,
       url: '',
       endTime: clock,
+      startTime: clock - duration,
+      duration,
       timeClass,
       rated: true,
       color: index % 2 === 0 ? 'white' : 'black',

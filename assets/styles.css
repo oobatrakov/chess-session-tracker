@@ -512,6 +512,45 @@ select:focus-visible {
   background: rgba(110, 168, 255, 0.25);
 }
 
+/* ---------- время за игрой ---------- */
+
+.session-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.session-bar .chips {
+  flex: 1 1 auto;
+}
+
+.playtime {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 9px 13px;
+  font-size: 12.5px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.playtime-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.playtime-value {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- счёт ---------- */
 
 .score {
