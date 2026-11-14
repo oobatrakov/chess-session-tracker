@@ -31,6 +31,20 @@ const OPENINGS = [
 ];
 
 // Хронология: [контроль, результат, рейтинг после партии]
+// 10 партий до старта сессии — чтобы в демо работали «Ритм» и «Сессия против базы».
+const HISTORY = [
+  ['win', 1480],
+  ['loss', 1475],
+  ['win', 1485],
+  ['loss', 1480],
+  ['win', 1490],
+  ['loss', 1485],
+  ['win', 1495],
+  ['win', 1505],
+  ['loss', 1500],
+  ['win', 1510],
+];
+
 const BLITZ = [
   ['win', 1518],
   ['loss', 1510],
@@ -62,18 +76,19 @@ const LOSS_TERMINATION = ['resign', 'time', 'mate'];
 export function createDemoState() {
   const nowSec = Math.floor(Date.now() / 1000);
   const games = [];
-  let clock = nowSec - (BLITZ.length + RAPID.length) * 420;
+  let clock = nowSec - (HISTORY.length + BLITZ.length + RAPID.length) * 900;
   let lossIndex = 0;
 
-  const push = (timeClass, outcome, myRating, index) => {
+  const push = (timeClass, outcome, myRating, index, prefix = 'session') => {
     const [opponent, opponentRating] = OPPONENTS[index % OPPONENTS.length];
     const opening = index % 7 === 6 ? null : OPENINGS[index % OPENINGS.length];
     const termination =
       outcome === 'loss' ? LOSS_TERMINATION[lossIndex++ % LOSS_TERMINATION.length] : outcome === 'win' ? 'win' : 'draw';
     const duration = timeClass === 'rapid' ? 360 : 240 + (index % 3) * 30;
-    clock += 420;
+    // Каждая четвёртая партия — после заметного перерыва, чтобы демо показывало оба бакета.
+    clock += index % 4 === 1 ? 900 : 420;
     games.push({
-      id: `demo:${timeClass}:${index}`,
+      id: `demo:${prefix}:${timeClass}:${index}`,
       url: '',
       endTime: clock,
       startTime: clock - duration,
@@ -94,6 +109,8 @@ export function createDemoState() {
     });
   };
 
+  HISTORY.forEach(([outcome, rating], index) => push('blitz', outcome, rating, index + 20, 'history'));
+  const historyEnd = clock;
   RAPID.forEach(([outcome, rating], index) => push('rapid', outcome, rating, index + 10));
   BLITZ.forEach(([outcome, rating], index) => push('blitz', outcome, rating, index));
 
@@ -104,8 +121,8 @@ export function createDemoState() {
     displayName: 'Demo Player',
     avatar: KNIGHT_AVATAR,
     profileUrl: 'https://www.chess.com/member/demo',
-    startedAt: (nowSec - (BLITZ.length + RAPID.length) * 420 - 600) * 1000,
-    sinceEndTime: nowSec - (BLITZ.length + RAPID.length) * 420 - 300,
+    startedAt: historyEnd * 1000,
+    sinceEndTime: historyEnd,
     anchors: { bullet: null, blitz: 1510, rapid: 1580, classical: null, daily: null },
     games: withRatingHistory(games),
     timeClass: 'blitz',

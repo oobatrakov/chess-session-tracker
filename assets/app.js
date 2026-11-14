@@ -28,9 +28,11 @@ import {
   timeBucketLabel,
 } from './i18n.js';
 import {
+  compareSessionToBaseline,
   computeAccuracy,
   computeColorStats,
   computeLossCauses,
+  computeSessionRhythm,
   computeStreaks,
   computeTimeOfDay,
   computeTips,
@@ -119,6 +121,8 @@ const ui = {
   accuracyValue: el('accuracy-value'),
   accuracySub: el('accuracy-sub'),
   colorStats: el('color-stats'),
+  rhythm: el('rhythm'),
+  baseline: el('baseline'),
   streaks: el('streaks'),
   timeOfDay: el('time-of-day'),
   longtermChart: el('longterm-chart'),
@@ -549,6 +553,8 @@ function render() {
   renderLiveGame();
   renderLog(summary);
   renderAnalytics();
+  renderRhythm(summary);
+  renderBaseline(summary);
   renderInsights();
   updateStatusText();
   showAlert(ui.sessionError, lastError);
@@ -1077,6 +1083,163 @@ function renderTips(games) {
 
   ui.tips.hidden = false;
   ui.tips.textContent = tips.join(' ');
+}
+
+function formatDecimal(value) {
+  return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value);
+}
+
+function formatSignedDecimal(value) {
+  if (value == null || !Number.isFinite(value)) return '—';
+  const text = formatDecimal(Math.abs(value));
+  return value > 0 ? `+${text}` : value < 0 ? `−${text}` : text;
+}
+
+function formatPointsDelta(value) {
+  if (value == null || !Number.isFinite(value)) return '—';
+  const points = Math.round(value * 100);
+  const text = `${Math.abs(points)} ${t('unit.pp')}`;
+  return points > 0 ? `+${text}` : points < 0 ? `−${text}` : text;
+}
+
+function rhythmRow(label, value) {
+  return `<div class="rhythm-row"><span class="rhythm-label">${escapeHtml(label)}</span><span class="rhythm-value">${value}</span></div>`;
+}
+
+function rhythmValue(value, count) {
+  if (!count) return '—';
+  if (count < 2) return `— <span class="muted">${count}</span>`;
+  return `${value == null ? '—' : percent(value)} <span class="muted">${count}</span>`;
+}
+
+function renderRhythm(summary) {
+  if (!ui.rhythm) return;
+  if (summary.total < 2) {
+    ui.rhythm.innerHTML = `<div class="insight-sub">${escapeHtml(t('rhythm.notEnough'))}</div>`;
+    return;
+  }
+
+  const rhythm = computeSessionRhythm(summary.rows);
+  const rows = [];
+
+  const breaksAny = rhythm.quick.games + rhythm.long.games >= 2;
+  rows.push(
+    rhythmRow(
+      t('rhythm.breaks'),
+      breaksAny
+        ? `${escapeHtml(t('rhythm.breakLong'))} ${rhythmValue(rhythm.long.score, rhythm.long.games)} · ${escapeHtml(t('rhythm.breakQuick'))} ${rhythmValue(rhythm.quick.score, rhythm.quick.games)}`
+        : escapeHtml(t('rhythm.notEnough')),
+    ),
+  );
+
+  const fatigueEnough = rhythm.first.games >= 2 && rhythm.second.games >= 2;
+  rows.push(
+    rhythmRow(
+      t('rhythm.fatigue'),
+      fatigueEnough
+        ? `${escapeHtml(t('rhythm.firstHalf'))} ${rhythmValue(rhythm.first.score, rhythm.first.games)} · ${escapeHtml(t('rhythm.secondHalf'))} ${rhythmValue(rhythm.second.score, rhythm.second.games)}`
+        : escapeHtml(t('rhythm.notEnough')),
+    ),
+  );
+
+  rows.push(
+    rhythmRow(
+      t('rhythm.afterLoss'),
+      rhythm.afterLoss.games >= 2
+        ? `${percent(rhythm.afterLoss.score)} <span class="muted">${rhythm.afterLoss.wins} ${escapeHtml(t('rhythm.of'))} ${rhythm.afterLoss.games}</span>`
+        : escapeHtml(t('rhythm.notEnough')),
+    ),
+  );
+
+  const tempo = [];
+  if (rhythm.avgPause != null) tempo.push(t('rhythm.avgPause', { value: formatPlayTime(Math.round(rhythm.avgPause)) }));
+  if (rhythm.avgGame != null) tempo.push(t('rhythm.avgGame', { value: formatPlayTime(Math.round(rhythm.avgGame)) }));
+  if (rhythm.gamesPerHour != null) tempo.push(t('rhythm.perHour', { value: formatDecimal(rhythm.gamesPerHour) }));
+  rows.push(rhythmRow(t('rhythm.tempo'), tempo.length ? escapeHtml(tempo.join(' · ')) : escapeHtml(t('rhythm.notEnough'))));
+
+  ui.rhythm.innerHTML = rows.join('');
+}
+
+function baselineRow(label, sessionValue, baseValue, delta) {
+  return `<div class="baseline-row">
+    <span class="baseline-label">${escapeHtml(label)}</span>
+    <span class="baseline-session">${sessionValue}</span>
+    <span class="baseline-base">${baseValue}</span>
+    <span class="baseline-diff ${delta.className}">${delta.text}</span>
+  </div>`;
+}
+
+function renderBaseline(summary) {
+  if (!ui.baseline || !state) return;
+
+  const history = state.games.filter(
+    (game) =>
+      game.endTime <= state.sinceEndTime &&
+      (state.timeClass === 'all' || game.timeClass === state.timeClass),
+  );
+  const data = compareSessionToBaseline(summary.rows, history);
+  const footer = `<div class="baseline-note">${escapeHtml(
+    t('baseline.footer', {
+      count: data.baseline.games,
+      games: gamesWord(data.baseline.games),
+    }),
+  )}</div>`;
+
+  if (!data.enough) {
+    ui.baseline.innerHTML = `<div class="insight-sub">${escapeHtml(t('baseline.notEnough'))}</div>${footer}`;
+    return;
+  }
+
+  const head = `<div class="baseline-row baseline-row--head">
+    <span></span>
+    <span>${escapeHtml(t('baseline.session'))}</span>
+    <span>${escapeHtml(t('baseline.base'))}</span>
+    <span>${escapeHtml(t('baseline.delta'))}</span>
+  </div>`;
+
+  const rows = [
+    baselineRow(
+      t('baseline.winrate'),
+      data.session.winrate == null ? '—' : percent(data.session.winrate),
+      data.baseline.winrate == null ? '—' : percent(data.baseline.winrate),
+      (() => {
+        const delta = data.session.winrate != null && data.baseline.winrate != null ? data.session.winrate - data.baseline.winrate : null;
+        return { text: formatPointsDelta(delta), className: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat' };
+      })(),
+    ),
+    baselineRow(
+      t('baseline.score'),
+      percent(data.session.score),
+      percent(data.baseline.score),
+      (() => {
+        const delta = data.session.score - data.baseline.score;
+        return { text: formatPointsDelta(delta), className: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat' };
+      })(),
+    ),
+    baselineRow(
+      t('baseline.accuracy'),
+      data.session.accuracy == null ? '—' : `${data.session.accuracy}%`,
+      data.baseline.accuracy == null ? '—' : `${data.baseline.accuracy}%`,
+      (() => {
+        const delta = data.session.accuracy != null && data.baseline.accuracy != null ? (data.session.accuracy - data.baseline.accuracy) / 100 : null;
+        return { text: formatPointsDelta(delta), className: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat' };
+      })(),
+    ),
+    baselineRow(
+      t('baseline.ratingPace'),
+      formatSignedDecimal(data.session.avgDiff),
+      formatSignedDecimal(data.baseline.avgDiff),
+      (() => {
+        const delta = data.session.avgDiff != null && data.baseline.avgDiff != null ? data.session.avgDiff - data.baseline.avgDiff : null;
+        return {
+          text: formatSignedDecimal(delta),
+          className: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat',
+        };
+      })(),
+    ),
+  ];
+
+  ui.baseline.innerHTML = head + rows.join('') + footer;
 }
 
 /* ---------- дополнительные блоки ---------- */

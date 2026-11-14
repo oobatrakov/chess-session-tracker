@@ -56,6 +56,91 @@ export function computeColorStats(games) {
   });
 }
 
+function statsOf(games) {
+  const list = games ?? [];
+  const wins = list.filter((game) => game.outcome === 'win').length;
+  const losses = list.filter((game) => game.outcome === 'loss').length;
+  const draws = list.length - wins - losses;
+  const accuracy = computeAccuracy(list);
+  const diffs = list.map((game) => game.ratingDiff).filter((value) => Number.isFinite(value));
+  return {
+    games: list.length,
+    wins,
+    losses,
+    draws,
+    winrate: list.length ? wins / list.length : null,
+    score: scoreOf(wins, draws, list.length),
+    accuracy: accuracy.avg,
+    avgDiff: diffs.length ? average(diffs) : null,
+  };
+}
+
+function startOf(game) {
+  if (Number.isFinite(game.startTime) && game.startTime > 0) return game.startTime;
+  if (Number.isFinite(game.duration) && game.duration > 0) return game.endTime - game.duration;
+  return null;
+}
+
+/**
+ * Ритм сессии: перерывы между партиями, усталость по половинам,
+ * результат после поражения и темп.
+ */
+export function computeSessionRhythm(games, { breakSeconds = 300 } = {}) {
+  const sorted = [...(games ?? [])].sort((a, b) => a.endTime - b.endTime);
+  const gaps = [];
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previous = sorted[index - 1];
+    const current = sorted[index];
+    const start = startOf(current);
+    if (start == null || !Number.isFinite(previous.endTime)) continue;
+    const gap = start - previous.endTime;
+    if (gap >= 0) gaps.push({ gap, game: current });
+  }
+
+  const quick = gaps.filter((item) => item.gap < breakSeconds).map((item) => item.game);
+  const long = gaps.filter((item) => item.gap >= breakSeconds).map((item) => item.game);
+
+  const half = Math.ceil(sorted.length / 2);
+  const first = sorted.slice(0, half);
+  const second = sorted.slice(half);
+
+  const afterLoss = [];
+  for (let index = 1; index < sorted.length; index += 1) {
+    if (sorted[index - 1].outcome === 'loss') afterLoss.push(sorted[index]);
+  }
+
+  const pauses = gaps.map((item) => item.gap);
+  const durations = sorted
+    .map((game) => game.duration)
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const totalDuration = durations.reduce((sum, value) => sum + value, 0);
+
+  return {
+    games: sorted.length,
+    quick: statsOf(quick),
+    long: statsOf(long),
+    first: statsOf(first),
+    second: statsOf(second),
+    afterLoss: statsOf(afterLoss),
+    avgPause: pauses.length ? average(pauses) : null,
+    avgGame: durations.length ? average(durations) : null,
+    gamesPerHour: totalDuration > 0 ? (sorted.length / totalDuration) * 3600 : null,
+    breakSeconds,
+  };
+}
+
+/** Сравнение текущей сессии с уже загруженной историей до её старта. */
+export function compareSessionToBaseline(sessionGames, historyGames) {
+  const session = statsOf(sessionGames);
+  const baseline = statsOf(historyGames);
+  return {
+    session,
+    baseline,
+    enough: session.games >= 3 && baseline.games >= 5,
+  };
+}
+
 /** Текущая серия, лучшая серия побед и самая длинная серия без поражений. */
 export function computeStreaks(games) {
   const list = [...(games ?? [])].sort((a, b) => a.endTime - b.endTime);
