@@ -3,6 +3,7 @@
 
 import { fetchJson, fetchNdjson, fetchText } from '../http.js';
 import { TIME_CLASSES, normName, toRating } from '../session.js';
+import { t } from '../i18n.js';
 
 export const id = 'lichess';
 export const label = 'Lichess';
@@ -66,6 +67,11 @@ export function normalizeGame(raw, username) {
   const winner = raw.winner ?? null;
   const outcome = winner ? (winner === side ? 'win' : 'loss') : 'draw';
 
+  const ratingBefore = toRating(mine.rating);
+  const ratingDiff = Number.isFinite(mine.ratingDiff) ? mine.ratingDiff : null;
+  // Lichess отдаёт rating до партии; в приложении myRating — рейтинг после.
+  const myRating = ratingBefore != null && ratingDiff != null ? ratingBefore + ratingDiff : ratingBefore;
+
   const endTime = Math.floor(Number(raw.lastMoveAt ?? raw.createdAt ?? 0) / 1000);
   if (!Number.isFinite(endTime) || endTime <= 0) return null;
 
@@ -75,7 +81,7 @@ export function normalizeGame(raw, username) {
 
   const opponentName =
     theirs.user?.name ??
-    (theirs.aiLevel ? `Stockfish ${theirs.aiLevel}` : 'Аноним');
+    (theirs.aiLevel ? `Stockfish ${theirs.aiLevel}` : t('provider.anonymous'));
 
   return {
     id: `li:${raw.id}`,
@@ -87,13 +93,13 @@ export function normalizeGame(raw, username) {
     rated: raw.rated === true,
     color: side,
     outcome,
-    myRating: toRating(mine.rating),
-    ratingDiff: Number.isFinite(mine.ratingDiff) ? mine.ratingDiff : null,
+    myRating,
+    ratingDiff,
     opponent: String(opponentName),
     opponentRating: toRating(theirs.rating),
     opponentResult: winner ? (winner === side ? 'loss' : 'win') : 'draw',
     opening: raw.opening ? { eco: raw.opening.eco ?? null, name: raw.opening.name ?? null } : null,
-    accuracy: toAccuracy(raw.analysis?.[side]?.accuracy ?? raw.accuracy),
+    accuracy: toAccuracy(mine.analysis?.accuracy ?? raw.analysis?.[side]?.accuracy ?? raw.accuracy),
     termination: terminationOf(raw.status),
     source: id,
   };
@@ -133,6 +139,7 @@ export async function getGames(username, { fromSec, toSec, signal } = {}) {
     until: String(until),
     max: '1000',
     opening: 'true',
+    accuracy: 'true',
     clocks: 'false',
     evals: 'false',
     ongoing: 'false',

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Статистика шахматных сессий — Chess.com и Lichess</title>
+  <title data-i18n="meta.title">Статистика шахматных сессий — Chess.com и Lichess</title>
   <meta name="description" content="Считает победы, поражения, ничьи и изменение рейтинга за игровую сессию на Chess.com и Lichess, строит график рейтинга и статистику по соперникам и дебютам.">
   <meta name="color-scheme" content="dark">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23121a26'/%3E%3Ctext x='50' y='74' font-size='64' text-anchor='middle' fill='%233ddc84'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
@@ -15,17 +15,23 @@
       <span class="brand-glyph" aria-hidden="true">♞</span>
       <span>Chess Session Tracker</span>
     </div>
-    <nav class="topbar-links">
-      <a href="?demo=1">демо</a>
-      <a href="https://www.chess.com" target="_blank" rel="noreferrer">chess.com ↗</a>
-      <a href="https://lichess.org" target="_blank" rel="noreferrer">lichess ↗</a>
-    </nav>
+    <div class="topbar-right">
+      <nav class="topbar-links">
+        <a href="?demo=1" data-i18n="nav.demo">демо</a>
+        <a href="https://www.chess.com" target="_blank" rel="noreferrer">chess.com ↗</a>
+        <a href="https://lichess.org" target="_blank" rel="noreferrer">lichess ↗</a>
+      </nav>
+      <div class="lang-switch" id="lang-switch" role="group" aria-label="Язык" data-i18n-aria-label="nav.language">
+        <button type="button" class="lang-btn is-active" data-lang="ru" aria-pressed="true">RU</button>
+        <button type="button" class="lang-btn" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+    </div>
   </header>
 
   <main class="wrap">
     <section id="setup" class="setup" aria-labelledby="setup-title">
-      <h1 id="setup-title">Статистика сессии <span class="accent">на Chess.com и Lichess</span></h1>
-      <p class="lead">
+      <h1 id="setup-title"><span data-i18n="setup.title">Статистика сессии</span> <span class="accent" data-i18n="setup.titleAccent">на Chess.com и Lichess</span></h1>
+      <p class="lead" data-i18n="setup.lead">
         Укажите площадку и имя игрока, начните сессию. Приложение подтянет партии, завершённые после старта,
         посчитает победы, поражения, ничьи и изменение рейтинга, а в аналитике покажет график и статистику
         по соперникам и дебютам.
@@ -36,29 +42,30 @@
         <footer id="quote-author"></footer>
       </blockquote>
 
-      <div class="site-picker" id="site-picker" role="tablist" aria-label="Площадка"></div>
+      <div class="site-picker" id="site-picker" role="tablist" aria-label="Площадка" data-i18n-aria-label="setup.sitePicker"></div>
 
       <form id="start-form" class="start-form" novalidate>
         <label class="field">
-          <span class="field-label">Имя пользователя</span>
+          <span class="field-label" data-i18n="setup.username">Имя пользователя</span>
           <input id="username" name="username" type="text" inputmode="text" autocomplete="off"
-                 autocapitalize="off" spellcheck="false" placeholder="например, hikaru" required>
+                 autocapitalize="off" spellcheck="false" placeholder="например, hikaru"
+                 data-i18n-placeholder="setup.usernamePlaceholder" required>
         </label>
 
         <label class="field field--select">
-          <span class="field-label">Контроль времени</span>
+          <span class="field-label" data-i18n="setup.timeClass">Контроль времени</span>
           <select id="time-class">
-            <option value="all">Все</option>
+            <option value="all" data-i18n="setup.all">Все</option>
           </select>
         </label>
 
         <button class="btn btn--primary" type="submit" id="start-btn">
-          <span class="btn-label">Начать сессию</span>
+          <span class="btn-label" data-i18n="setup.start">Начать сессию</span>
           <span class="spinner" hidden aria-hidden="true"></span>
         </button>
       </form>
 
-      <p class="hint">
+      <p class="hint" data-i18n="setup.hint">
         Партии, завершённые до нажатия кнопки, в сессию не попадают. Если ник не найден на выбранной площадке,
         приложение попробует вторую. Данные — из публичных API.
       </p>
@@ -72,7 +79,7 @@
           <div class="player-name">
             <span id="display-name"></span>
             <span class="badge badge--site" id="provider-badge"></span>
-            <span class="badge" id="demo-badge" hidden>демо</span>
+            <span class="badge" id="demo-badge" hidden data-i18n="player.demoBadge">демо</span>
           </div>
           <a id="profile-link" class="player-link" target="_blank" rel="noreferrer"></a>
         </div>
@@ -85,9 +92,9 @@
             <span class="dot" aria-hidden="true"></span>
             <a id="live-text" href="#" target="_blank" rel="noreferrer"></a>
           </span>
-          <button class="btn btn--ghost" id="refresh-btn" type="button">Обновить</button>
-          <button class="btn btn--ghost" id="reset-btn" type="button">Сбросить</button>
-          <button class="btn btn--ghost btn--danger" id="end-btn" type="button">Завершить</button>
+          <button class="btn btn--ghost" id="refresh-btn" type="button" data-i18n="player.refresh">Обновить</button>
+          <button class="btn btn--ghost" id="reset-btn" type="button" data-i18n="player.reset">Сбросить</button>
+          <button class="btn btn--ghost btn--danger" id="end-btn" type="button" data-i18n="player.end">Завершить</button>
         </div>
       </div>
 
@@ -95,10 +102,10 @@
       <p class="alert" id="session-error" role="alert" hidden></p>
 
       <div class="session-bar">
-        <nav class="chips" id="filters" aria-label="Контроль времени"></nav>
+        <nav class="chips" id="filters" aria-label="Контроль времени" data-i18n-aria-label="setup.timeClass"></nav>
         <div class="playtime" id="playtime" hidden>
           <span class="playtime-icon" aria-hidden="true">⏱</span>
-          <span class="playtime-label">Время за игрой</span>
+          <span class="playtime-label" data-i18n="session.playtime">Время за игрой</span>
           <strong class="playtime-value" id="playtime-value">—</strong>
         </div>
       </div>
@@ -107,15 +114,15 @@
         <div class="score-metrics">
           <div class="metric metric--win">
             <span class="metric-value" id="wins">0</span>
-            <span class="metric-label">Победы</span>
+            <span class="metric-label" data-i18n="session.wins">Победы</span>
           </div>
           <div class="metric metric--loss">
             <span class="metric-value" id="losses">0</span>
-            <span class="metric-label">Поражения</span>
+            <span class="metric-label" data-i18n="session.losses">Поражения</span>
           </div>
           <div class="metric metric--draw">
             <span class="metric-value" id="draws">0</span>
-            <span class="metric-label">Ничьи</span>
+            <span class="metric-label" data-i18n="session.draws">Ничьи</span>
           </div>
         </div>
 
@@ -123,16 +130,16 @@
           <div class="score-side score-side--left">
             <div class="mini-stat">
               <span class="mini-value" id="winrate-value">—</span>
-              <span class="mini-label">Винрейт</span>
+              <span class="mini-label" data-i18n="session.winrate">Винрейт</span>
             </div>
             <div class="mini-stat">
               <span class="mini-value" id="accuracy-mini-value">—</span>
-              <span class="mini-label">Средняя точность</span>
+              <span class="mini-label" data-i18n="session.accuracy">Средняя точность</span>
             </div>
           </div>
 
           <div class="rating">
-            <div class="rating-label">Рейтинг за сессию</div>
+            <div class="rating-label" data-i18n="session.rating">Рейтинг за сессию</div>
             <div class="rating-delta" id="rating-delta">±0</div>
             <div class="rating-rows" id="rating-rows" hidden></div>
             <div class="rating-sub" id="rating-sub"></div>
@@ -141,19 +148,19 @@
           <div class="score-side score-side--right">
             <div class="mini-stat">
               <span class="mini-value" id="streak-value">—</span>
-              <span class="mini-label">Серия</span>
+              <span class="mini-label" data-i18n="session.streak">Серия</span>
               <span class="mini-sub" id="streak-sub"></span>
             </div>
             <div class="mini-stat mini-stat--color">
-              <span class="mini-label">Цвет · очки</span>
-              <div class="color-donuts" id="color-donuts" aria-label="Результат за белых и чёрных"></div>
+              <span class="mini-label" data-i18n="session.color">Цвет · очки</span>
+              <div class="color-donuts" id="color-donuts" aria-label="Результат за белых и чёрных" data-i18n-aria-label="session.colorAria"></div>
             </div>
           </div>
         </div>
 
         <div class="last-games">
           <div class="last-games-icons" id="last10"></div>
-          <div class="last-games-empty" id="last10-empty">Пока нет завершённых партий в этой сессии</div>
+          <div class="last-games-empty" id="last10-empty" data-i18n="session.lastGamesEmpty">Пока нет завершённых партий в этой сессии</div>
         </div>
       </div>
 
@@ -162,15 +169,15 @@
       <section class="analytics card" aria-labelledby="analytics-title">
         <div class="analytics-head">
           <div class="analytics-heading">
-            <h2 id="analytics-title">Аналитика</h2>
+            <h2 id="analytics-title" data-i18n="analytics.title">Аналитика</h2>
             <div class="analytics-stats" id="analytics-stats"></div>
           </div>
-          <div class="chips chips--sm" id="period-chips" role="tablist" aria-label="Период"></div>
+          <div class="chips chips--sm" id="period-chips" role="tablist" aria-label="Период" data-i18n-aria-label="analytics.period"></div>
         </div>
 
         <div class="chart-block">
           <div class="chart-head">
-            <div class="chart-title">Рейтинг по партиям</div>
+            <div class="chart-title" data-i18n="analytics.chartTitle">Рейтинг по партиям</div>
           </div>
           <div class="chart-caption" id="chart-caption"></div>
           <div class="chart" id="chart"></div>
@@ -180,17 +187,17 @@
         <div class="stats-grid">
           <div class="stats-block">
             <div class="stats-head">
-              <h3>Соперники <span class="muted">топ-5</span></h3>
-              <div class="chips chips--xs" id="opponents-sort" role="tablist" aria-label="Сортировка соперников"></div>
+              <h3><span data-i18n="analytics.opponents">Соперники</span> <span class="muted" data-i18n="analytics.top">топ-5</span></h3>
+              <div class="chips chips--xs" id="opponents-sort" role="tablist" aria-label="Сортировка соперников" data-i18n-aria-label="analytics.opponentsSort"></div>
             </div>
             <div class="table-wrap table-wrap--short">
               <table class="mini">
                 <thead>
                   <tr>
-                    <th>Соперник</th>
-                    <th class="num">Игры</th>
-                    <th>В–П–Н</th>
-                    <th class="num">Очки</th>
+                    <th data-i18n="table.opponent">Соперник</th>
+                    <th class="num" data-i18n="table.games">Игры</th>
+                    <th data-i18n="table.wld">В–П–Н</th>
+                    <th class="num" data-i18n="table.points">Очки</th>
                   </tr>
                 </thead>
                 <tbody id="opponents-body"></tbody>
@@ -200,16 +207,16 @@
 
           <div class="stats-block">
             <div class="stats-head">
-              <h3>Дебюты <span class="muted">топ-5</span></h3>
+              <h3><span data-i18n="analytics.openings">Дебюты</span> <span class="muted" data-i18n="analytics.top">топ-5</span></h3>
             </div>
             <div class="table-wrap table-wrap--short">
               <table class="mini">
                 <thead>
                   <tr>
-                    <th>Дебют</th>
-                    <th class="num">Игры</th>
-                    <th>В–П–Н</th>
-                    <th class="num">Очки</th>
+                    <th data-i18n="table.opening">Дебют</th>
+                    <th class="num" data-i18n="table.games">Игры</th>
+                    <th data-i18n="table.wld">В–П–Н</th>
+                    <th class="num" data-i18n="table.points">Очки</th>
                   </tr>
                 </thead>
                 <tbody id="openings-body"></tbody>
@@ -219,32 +226,32 @@
         </div>
       </section>
 
-      <section class="insights" aria-label="Дополнительная статистика">
+      <section class="insights" aria-label="Дополнительная статистика" data-i18n-aria-label="insights.title">
         <article class="insight card">
-          <h3>Точность</h3>
+          <h3 data-i18n="insights.accuracy">Точность</h3>
           <div class="insight-value" id="accuracy-value">—</div>
           <div class="insight-sub" id="accuracy-sub"></div>
         </article>
 
         <article class="insight card">
-          <h3>Цвет</h3>
+          <h3 data-i18n="insights.color">Цвет</h3>
           <div class="color-stats" id="color-stats"></div>
         </article>
 
         <article class="insight card">
-          <h3>Серии</h3>
+          <h3 data-i18n="insights.streaks">Серии</h3>
           <div class="streaks" id="streaks"></div>
         </article>
 
         <article class="insight card">
-          <h3>Когда играешь лучше</h3>
+          <h3 data-i18n="insights.tod">Когда играешь лучше</h3>
           <div class="time-of-day" id="time-of-day"></div>
         </article>
 
         <article class="insight card insight--wide">
           <div class="insight-head">
-            <h3>Рейтинг за год</h3>
-            <button class="btn btn--ghost btn--sm" id="longterm-btn" type="button">За 12 месяцев</button>
+            <h3 data-i18n="insights.longterm">Рейтинг за год</h3>
+            <button class="btn btn--ghost btn--sm" id="longterm-btn" type="button" data-i18n="insights.longtermBtn">За 12 месяцев</button>
           </div>
           <div class="chart chart--small" id="longterm-chart"></div>
           <div class="chart-caption" id="longterm-caption"></div>
@@ -253,17 +260,17 @@
 
       <details class="log card" id="log">
         <summary>
-          <span class="log-title">Журнал партий сессии <span class="muted" id="log-count"></span></span>
+          <span class="log-title"><span data-i18n="log.title">Журнал партий сессии</span> <span class="muted" id="log-count"></span></span>
         </summary>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Время</th>
-                <th>Цвет</th>
-                <th>Соперник</th>
-                <th>Результат</th>
-                <th>Рейтинг</th>
+                <th data-i18n="log.time">Время</th>
+                <th data-i18n="log.color">Цвет</th>
+                <th data-i18n="log.opponent">Соперник</th>
+                <th data-i18n="log.result">Результат</th>
+                <th data-i18n="log.rating">Рейтинг</th>
               </tr>
             </thead>
             <tbody id="log-body"></tbody>
@@ -273,7 +280,7 @@
     </section>
   </main>
 
-  <footer class="footer">
+  <footer class="footer" data-i18n="footer.text">
     Неофициальный проект · обновление раз в 30 секунд · данные из публичных API Chess.com и Lichess
   </footer>
 

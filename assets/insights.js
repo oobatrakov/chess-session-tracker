@@ -1,6 +1,8 @@
 // Дополнительные метрики: точность, цвет, серии, причины поражений, время суток, советы.
 // Чистые функции — покрыты тестами.
 
+import { t } from './i18n.js';
+
 export const TIME_BUCKETS = [
   { id: 'night', label: 'Ночь', hint: '0–6', from: 0, to: 6 },
   { id: 'morning', label: 'Утро', hint: '6–12', from: 6, to: 12 },
@@ -197,57 +199,56 @@ export function computeTips({
   const percent = (value) => Math.round(value * 100);
 
   if (streaks.current.outcome === 'loss' && streaks.current.count >= 3) {
-    tips.push(`Серия из ${streaks.current.count} поражений подряд — сделайте паузу и вернитесь свежим.`);
+    tips.push(t('tip.lossStreak', { count: streaks.current.count }));
   }
 
   const timeLoss = lossCauses?.items?.find((item) => item.cause === 'time');
   if (timeLoss && timeLoss.games >= 3 && timeLoss.share >= 0.3) {
-    tips.push(
-      `${percent(timeLoss.share)}% поражений — на времени. Попробуйте контроль длиннее или оставляйте запас в 20–30 секунд.`,
-    );
+    tips.push(t('tip.timeLoss', { share: percent(timeLoss.share) }));
   }
 
   const openings = openingBreakdown(games).filter((entry) => entry.games >= 3);
   const worst = openings.filter((entry) => entry.score <= 0.35).sort((a, b) => a.score - b.score)[0];
   if (worst) {
     tips.push(
-      `Дебют «${worst.name}» приносит ${percent(worst.score)}% очков за ${worst.games} партий — стоит разобрать его или сменить.`,
+      t('tip.opening', {
+        name: worst.name,
+        share: percent(worst.score),
+        count: worst.games,
+      }),
     );
   }
 
   const white = colorStats.find((item) => item.color === 'white');
   const black = colorStats.find((item) => item.color === 'black');
   if (white?.games >= 3 && black?.games >= 3 && Math.abs(white.score - black.score) >= 0.15) {
-    const weaker = white.score < black.score ? 'белых' : 'чёрных';
-    tips.push(
-      `За белых ${percent(white.score)}% очков, за чёрных ${percent(black.score)}% — хуже результат за ${weaker}.`,
-    );
+    const weaker = white.score < black.score ? t('color.whiteWeak') : t('color.blackWeak');
+    tips.push(t('tip.color', { white: percent(white.score), black: percent(black.score), weaker }));
   }
 
   const night = timeOfDay.find((bucket) => bucket.id === 'night');
   const day = timeOfDay.find((bucket) => bucket.id === 'day');
   if (night?.games >= 3 && day?.games >= 3 && day.score - night.score >= 0.15) {
-    tips.push(
-      `Днём ${percent(day.score)}% очков, ночью ${percent(night.score)}% — похоже, поздние сессии даются хуже.`,
-    );
+    tips.push(t('tip.timeOfDay', { day: percent(day.score), night: percent(night.score) }));
   }
 
   if (accuracy?.avg != null && accuracy.games >= 5 && accuracy.avg < 70) {
-    tips.push(`Средняя точность ${accuracy.avg}% — есть запас для роста: больше времени на расчёт простых тактик.`);
+    tips.push(t('tip.accuracyLow', { value: accuracy.avg }));
   }
 
   // Если проблем не нашли — хотя бы отметим, что результат ровный.
   if (!tips.length && accuracy?.winAvg != null && accuracy?.lossAvg != null && accuracy.winAvg - accuracy.lossAvg >= 8) {
-    tips.push(
-      `В победах точность ${accuracy.winAvg}%, в поражениях ${accuracy.lossAvg}% — разрыв говорит о нестабильности расчёта.`,
-    );
+    tips.push(t('tip.accuracyGap', { win: accuracy.winAvg, loss: accuracy.lossAvg }));
   }
 
   if (!tips.length && games.length >= 10) {
     const wins = games.filter((game) => game.outcome === 'win').length;
     const draws = games.filter((game) => game.outcome === 'draw').length;
     tips.push(
-      `За ${games.length} партий ${percent(scoreOf(wins, draws, games.length))}% очков — ровный результат, явных провалов не видно.`,
+      t('tip.even', {
+        count: games.length,
+        score: percent(scoreOf(wins, draws, games.length)),
+      }),
     );
   }
 

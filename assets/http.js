@@ -1,5 +1,7 @@
 // Общий HTTP-слой для обоих API: таймауты, понятные ошибки, JSON и NDJSON.
 
+import { t } from './i18n.js';
+
 const TIMEOUT_MS = 15_000;
 
 export class ApiError extends Error {
@@ -25,22 +27,22 @@ async function request(url, { signal, headers } = {}) {
       headers,
     });
   } catch (error) {
-    if (signal?.aborted) throw new ApiError('Запрос отменён', { kind: 'aborted' });
-    if (error?.name === 'AbortError') throw new ApiError('Сервер не ответил вовремя', { kind: 'timeout' });
-    throw new ApiError('Нет связи с сервисом. Проверьте интернет.', { kind: 'network' });
+    if (signal?.aborted) throw new ApiError(t('error.aborted'), { kind: 'aborted' });
+    if (error?.name === 'AbortError') throw new ApiError(t('error.timeout'), { kind: 'timeout' });
+    throw new ApiError(t('error.network'), { kind: 'network' });
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', forwardAbort);
   }
 
   if (response.status === 404) {
-    throw new ApiError('Пользователь не найден', { status: 404, kind: 'notfound' });
+    throw new ApiError(t('error.userNotFound'), { status: 404, kind: 'notfound' });
   }
   if (response.status === 429) {
-    throw new ApiError('Слишком много запросов. Подождите минуту.', { status: 429, kind: 'ratelimit' });
+    throw new ApiError(t('error.ratelimit'), { status: 429, kind: 'ratelimit' });
   }
   if (!response.ok) {
-    throw new ApiError(`Сервис ответил ошибкой ${response.status}`, { status: response.status, kind: 'http' });
+    throw new ApiError(t('error.http', { status: response.status }), { status: response.status, kind: 'http' });
   }
 
   return response;
@@ -52,7 +54,7 @@ export async function fetchJson(url, options = {}) {
   try {
     return await response.json();
   } catch {
-    throw new ApiError('Сервис вернул некорректный ответ', { kind: 'parse' });
+    throw new ApiError(t('error.parse'), { kind: 'parse' });
   }
 }
 

@@ -103,6 +103,51 @@ body::before {
   font-size: 14px;
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.lang-btn {
+  padding: 4px 9px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.lang-btn:hover {
+  color: var(--text);
+}
+
+.lang-btn.is-active {
+  color: var(--text);
+  background: rgba(110, 168, 255, 0.18);
+}
+
+.lang-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.4);
+}
+
 .topbar-links a {
   color: var(--muted);
   text-decoration: none;
@@ -1536,6 +1581,10 @@ table.mini .num {
   background: rgba(246, 196, 69, 0.16);
   border: 1px solid rgba(246, 196, 69, 0.4);
   border-radius: 7px;
+}
+
+html[lang="en"] .tips::before {
+  content: "Tip";
 }
 
 .stats-head {

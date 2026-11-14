@@ -2,7 +2,7 @@
 // Точки стоят на равных интервалах по номеру партии, а не по времени:
 // паузы между игровыми днями не растягивают график.
 
-import { OUTCOME_LABELS } from './session.js';
+import { getLocale, outcomeLabel, t } from './i18n.js';
 
 export const CLASS_COLORS = {
   bullet: '#ffb454',
@@ -25,13 +25,13 @@ const escapeXml = (value) =>
   })[char]);
 
 const formatDate = (unixSeconds) =>
-  new Date(unixSeconds * 1000).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  new Date(unixSeconds * 1000).toLocaleDateString(getLocale(), { day: '2-digit', month: '2-digit' });
 
 const formatTime = (unixSeconds) =>
-  new Date(unixSeconds * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  new Date(unixSeconds * 1000).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' });
 
 const formatTooltipDate = (unixSeconds) =>
-  new Date(unixSeconds * 1000).toLocaleString('ru-RU', {
+  new Date(unixSeconds * 1000).toLocaleString(getLocale(), {
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',
@@ -51,7 +51,7 @@ export function buildRatingChart(input, options = {}) {
 
   let series = Array.isArray(input) ? input : [];
   if (series.length && series[0]?.value !== undefined) {
-    series = [{ label: 'Рейтинг', color: CLASS_COLORS.blitz, points: series }];
+    series = [{ label: t('chart.series'), color: CLASS_COLORS.blitz, points: series }];
   }
   series = series.filter((item) => Array.isArray(item?.points) && item.points.length);
   if (!series.length) return '';
@@ -128,7 +128,7 @@ export function buildRatingChart(input, options = {}) {
         .map((point) => {
           const diff =
             point.ratingDiff == null ? '' : ` · ${point.ratingDiff > 0 ? '+' : ''}${point.ratingDiff}`;
-          const tip = `${formatTooltipDate(point.endTime)} · ${OUTCOME_LABELS[point.outcome] ?? point.outcome} · ${point.opponent ?? ''}${diff} · рейтинг ${point.value}`;
+          const tip = `${formatTooltipDate(point.endTime)} · ${outcomeLabel(point.outcome)} · ${point.opponent ?? ''}${diff} · ${t('chart.rating', { value: point.value })}`;
           return `<circle class="chart-point ${point.outcome}" cx="${xAt(point).toFixed(1)}" cy="${yAt(point.value).toFixed(1)}" r="${radius}"><title>${escapeXml(tip)}</title></circle>`;
         })
         .join('')
@@ -153,11 +153,11 @@ export function buildRatingChart(input, options = {}) {
   const axisFormat = sameDay(minTime, maxTime) ? formatTime : formatDate;
   const last = series[0].points[series[0].points.length - 1];
   const summary = multi
-    ? `${series.length} контролей, ${ordered.length} точек`
-    : `${ordered.length} партий, с ${series[0].points[0].value} до ${last.value}`;
+    ? t('chart.summaryMulti', { series: series.length, points: ordered.length })
+    : t('chart.summarySingle', { points: ordered.length, first: series[0].points[0].value, last: last.value });
 
   return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img"
-      aria-label="График рейтинга: ${escapeXml(summary)}">
+      aria-label="${escapeXml(t('chart.aria', { summary }))}">
     <g class="chart-grid">${grid}</g>
     ${paths}
     ${dots}

@@ -1,8 +1,6 @@
 import { ApiError } from './http.js';
 import { getProvider, otherProvider, PROVIDER_LABELS, PROVIDER_IDS } from './providers/index.js';
 import {
-  CLASS_LABELS,
-  OUTCOME_LABELS,
   PERIODS,
   TIME_CLASSES,
   aggregateOpenings,
@@ -15,6 +13,20 @@ import {
   summarize,
   totalPlayTime,
 } from './session.js';
+import {
+  applyStaticTranslations,
+  classLabel,
+  gamesWord,
+  getLanguage,
+  getLocale,
+  LANG_STORAGE_KEY,
+  outcomeLabel,
+  periodLabel,
+  setLanguage as setI18nLanguage,
+  sortLabel,
+  t,
+  timeBucketLabel,
+} from './i18n.js';
 import {
   computeAccuracy,
   computeColorStats,
@@ -45,11 +57,6 @@ const PLACEHOLDER_AVATAR = `data:image/svg+xml,${encodeURIComponent(
    </svg>`,
 )}`;
 
-const SORT_LABELS = {
-  rating: 'По рейтингу',
-  score: 'По очкам',
-};
-
 const el = (id) => document.getElementById(id);
 
 const ui = {
@@ -68,6 +75,7 @@ const ui = {
   quoteText: el('quote-text'),
   quoteAuthor: el('quote-author'),
   sitePicker: el('site-picker'),
+  langSwitch: el('lang-switch'),
   avatar: el('avatar'),
   displayName: el('display-name'),
   profileLink: el('profile-link'),
@@ -149,25 +157,18 @@ const deltaClass = (value) => (value > 0 ? 'up' : value < 0 ? 'down' : 'flat');
 
 const percent = (value) => `${Math.round(value * 100)}%`;
 
-function plural(count, forms) {
-  const tens = Math.abs(count) % 100;
-  const ones = tens % 10;
-  if (tens > 10 && tens < 20) return forms[2];
-  if (ones === 1) return forms[0];
-  if (ones >= 2 && ones <= 4) return forms[1];
-  return forms[2];
-}
-
 function formatPlayTime(seconds) {
-  if (seconds < 60) return `${seconds} с`;
+  if (seconds < 60) return t('duration.sec', { count: seconds });
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) {
     const rest = seconds % 60;
-    return minutes < 10 && rest ? `${minutes} мин ${rest} с` : `${minutes} мин`;
+    return minutes < 10 && rest
+      ? t('duration.minSec', { min: minutes, sec: rest })
+      : t('duration.min', { count: minutes });
   }
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
+  return rest ? t('duration.hourMin', { hours, min: rest }) : t('duration.hour', { count: hours });
 }
 
 function profileLabel(url, username) {
@@ -180,27 +181,27 @@ function profileLabel(url, username) {
 }
 
 function timeAgo(timestamp) {
-  if (!timestamp) return 'только что';
+  if (!timestamp) return t('time.justNow');
   const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-  if (seconds < 5) return 'только что';
-  if (seconds < 60) return `${seconds} с назад`;
+  if (seconds < 5) return t('time.justNow');
+  if (seconds < 60) return t('time.secAgo', { count: seconds });
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} мин назад`;
-  return `${Math.floor(minutes / 60)} ч назад`;
+  if (minutes < 60) return t('time.minAgo', { count: minutes });
+  return t('time.hourAgo', { count: Math.floor(minutes / 60) });
 }
 
 function friendlyError(error) {
   switch (error?.kind) {
     case 'notfound':
-      return error.message || 'Пользователь не найден.';
+      return error.message || t('error.userNotFound');
     case 'network':
-      return 'Нет связи с сервисом. Проверьте интернет — обновление продолжится автоматически.';
+      return t('error.network');
     case 'ratelimit':
-      return 'Сервис ограничил частоту запросов. Подождите минуту.';
+      return t('error.ratelimit');
     case 'timeout':
-      return 'Сервис не ответил вовремя. Попробуйте ещё раз.';
+      return t('error.timeout');
     default:
-      return error?.message || 'Что-то пошло не так. Попробуйте ещё раз.';
+      return error?.message || t('error.generic');
   }
 }
 
@@ -291,9 +292,9 @@ function renderClassOptions() {
   const allowed = providerClasses(selectedProvider);
   const previous = ui.timeClass.value;
   ui.timeClass.innerHTML = [
-    '<option value="all">Все</option>',
+    `<option value="all">${t('setup.all')}</option>`,
     ...TIME_CLASSES.filter((timeClass) => allowed.includes(timeClass)).map(
-      (timeClass) => `<option value="${timeClass}">${CLASS_LABELS[timeClass]}</option>`,
+      (timeClass) => `<option value="${timeClass}">${classLabel(timeClass)}</option>`,
     ),
   ].join('');
   ui.timeClass.value = previous && (previous === 'all' || allowed.includes(previous)) ? previous : 'all';
@@ -304,7 +305,7 @@ function renderClassOptions() {
 function setStarting(active) {
   if (ui.startBtn) ui.startBtn.disabled = active;
   if (ui.spinner) ui.spinner.hidden = !active;
-  if (ui.startLabel) ui.startLabel.textContent = active ? 'Подключаюсь…' : 'Начать сессию';
+  if (ui.startLabel) ui.startLabel.textContent = active ? t('setup.connecting') : t('setup.start');
 }
 
 async function resolveProfile(providerId, name) {
@@ -316,7 +317,7 @@ async function resolveProfile(providerId, name) {
     const alternative = otherProvider(providerId);
     const profile = await getProvider(alternative).getProfile(name).catch(() => null);
     if (!profile) {
-      throw new ApiError(`Ник «${name}» не найден ни на Chess.com, ни на Lichess.`, { kind: 'notfound' });
+      throw new ApiError(t('error.usernameNotFound', { name }), { kind: 'notfound' });
     }
     return { providerId: alternative, profile, switched: true };
   }
@@ -367,7 +368,7 @@ async function startSession(providerId, name, timeClass, period = 'session') {
     saveState();
     render();
     if (switched) {
-      showNote(`Ник найден на ${PROVIDER_LABELS[resolvedId]} — переключил площадку автоматически.`);
+      showNote(t('note.switched', { provider: PROVIDER_LABELS[resolvedId] }));
     }
     startPolling();
   } catch (error) {
@@ -393,7 +394,10 @@ function stopPolling() {
 function endSession() {
   if (!state) return;
   const played = summarize(state, { timeClass: state.timeClass, period: 'session' }).total;
-  if (played > 0 && !window.confirm(`Завершить сессию? Статистика (${played} партий) будет очищена.`)) {
+  if (
+    played > 0 &&
+    !window.confirm(t('dialog.end', { count: played, games: gamesWord(played) }))
+  ) {
     return;
   }
   stopPolling();
@@ -414,9 +418,7 @@ function restartSession() {
   const played = summarize(state, { timeClass: state.timeClass, period: 'session' }).total;
   if (
     played > 0 &&
-    !window.confirm(
-      `Сбросить сессию? Отсчёт начнётся заново, а ${played} ${plural(played, ['партия', 'партии', 'партий'])} останется в истории для графиков.`,
-    )
+    !window.confirm(t('dialog.reset', { count: played, games: gamesWord(played) }))
   ) {
     return;
   }
@@ -427,7 +429,7 @@ function restartSession() {
   filtersKey = '';
   saveState();
   render();
-  showNote('Сессия сброшена: отсчёт начат заново, история осталась в аналитике.');
+  showNote(t('note.reset'));
   refresh({ reason: 'reset' });
 }
 
@@ -520,7 +522,7 @@ function render() {
 
   const provider = getProvider(state.provider);
   ui.avatar.src = state.avatar || PLACEHOLDER_AVATAR;
-  ui.avatar.alt = `Аватар ${state.displayName || state.username}`;
+  ui.avatar.alt = t('player.avatar', { name: state.displayName || state.username });
   ui.displayName.textContent = state.displayName || state.username;
   ui.profileLink.textContent = profileLabel(state.profileUrl, state.username);
   ui.profileLink.href = state.profileUrl;
@@ -560,7 +562,7 @@ function renderRating(summary) {
     ui.ratingDelta.textContent = '±0';
     ui.ratingDelta.className = 'rating-delta flat';
     ui.ratingRows.hidden = true;
-    ui.ratingSub.textContent = 'партий пока нет';
+    ui.ratingSub.textContent = t('session.noGames');
     return;
   }
 
@@ -572,17 +574,17 @@ function renderRating(summary) {
     ui.ratingRows.hidden = true;
     ui.ratingSub.textContent =
       bucket.anchor != null && bucket.current != null
-        ? `${CLASS_LABELS[bucket.class] ?? bucket.class} · ${bucket.anchor} → ${bucket.current}`
-        : 'нет данных о рейтинге';
+        ? `${classLabel(bucket.class)} · ${bucket.anchor} → ${bucket.current}`
+        : t('session.noRatingData');
     return;
   }
 
   ui.ratingDelta.hidden = true;
   ui.ratingRows.hidden = false;
-  ui.ratingSub.textContent = 'изменение по каждому контролю';
+  ui.ratingSub.textContent = t('session.ratingByClass');
   ui.ratingRows.innerHTML = classes
     .map((bucket) => {
-      const label = CLASS_LABELS[bucket.class] ?? bucket.class;
+      const label = classLabel(bucket.class);
       const arrow = bucket.anchor != null && bucket.current != null ? `${bucket.anchor} → ${bucket.current}` : '—';
       const delta = bucket.delta == null ? '—' : formatDelta(bucket.delta);
       return `<div class="rating-row">
@@ -610,29 +612,34 @@ function renderScoreStats(summary) {
 
   const streaks = computeStreaks(games);
   const current = streaks.current;
-  const streakLabels = { win: 'побед подряд', loss: 'поражений подряд', draw: 'ничьих подряд' };
   if (current.count) {
     const sign = current.outcome === 'win' ? '+' : current.outcome === 'loss' ? '−' : '=';
     const icon = current.outcome === 'win' ? '🔥' : current.outcome === 'loss' ? '☁️' : '🤝';
     ui.streakValue.textContent = `${icon} ${sign}${current.count}`;
     ui.streakValue.className = `mini-value ${current.outcome === 'win' ? 'up' : current.outcome === 'loss' ? 'down' : 'flat'}`;
-    ui.streakSub.textContent = streakLabels[current.outcome] ?? '';
+    ui.streakSub.textContent = t(`streak.${current.outcome}`);
   } else {
     ui.streakValue.textContent = '—';
     ui.streakValue.className = 'mini-value flat';
-    ui.streakSub.textContent = 'нет партий';
+    ui.streakSub.textContent = t('streak.none');
   }
 
   const colorStats = computeColorStats(games);
   ui.colorDonuts.innerHTML = colorStats
     .map((row) => {
       const played = row.games;
-      const name = row.color === 'white' ? 'Белые' : 'Чёрные';
+      const name = t(`color.${row.color}`);
       const pieceClass = row.color === 'white' ? 'white' : 'black';
       const score = played ? Math.round(row.score * 100) : null;
       const title = played
-        ? `${name}: ${row.wins}–${row.draws}–${row.losses} (${score}% очков)`
-        : `${name}: нет партий`;
+        ? t('color.title', {
+            name,
+            wins: row.wins,
+            draws: row.draws,
+            losses: row.losses,
+            score,
+          })
+        : t('color.titleEmpty', { name });
       const w = played ? (row.wins / played) * 100 : 0;
       const d = played ? (row.draws / played) * 100 : 0;
       const l = played ? (row.losses / played) * 100 : 0;
@@ -655,7 +662,7 @@ function renderPlaytime(summary) {
   }
   ui.playtime.hidden = false;
   ui.playtimeValue.textContent = formatPlayTime(seconds);
-  ui.playtime.title = 'Сумма длительности завершённых партий сессии';
+  ui.playtime.title = t('session.playtimeTitle');
 }
 
 function renderFilters() {
@@ -688,7 +695,7 @@ function renderFilters() {
       const active = timeClass === state.timeClass;
       return `<button type="button" class="chip${active ? ' is-active' : ''}"
         data-class="${timeClass}" role="tab" aria-selected="${active}">
-        ${escapeHtml(CLASS_LABELS[timeClass] ?? timeClass)}
+        ${escapeHtml(classLabel(timeClass))}
         <span class="chip-count">${counts[timeClass] ?? 0}</span>
       </button>`;
     })
@@ -701,11 +708,11 @@ function renderLast10(summary) {
   ui.last10Empty.hidden = games.length > 0;
   ui.last10.innerHTML = games
     .map((game, index) => {
-      const outcome = OUTCOME_LABELS[game.outcome] ?? game.outcome;
-      const color = game.color === 'white' ? 'белые' : 'чёрные';
+      const outcome = outcomeLabel(game.outcome);
+      const color = game.color === 'white' ? t('color.white') : t('color.black');
       const rating = game.opponentRating ? ` (${game.opponentRating})` : '';
       const delta = game.ratingDiff == null ? '' : ` · ${formatDelta(game.ratingDiff)}`;
-      const tip = `${outcome} · ${color} · ${game.opponent}${rating} · ${CLASS_LABELS[game.timeClass] ?? game.timeClass}${delta}`;
+      const tip = `${outcome} · ${color} · ${game.opponent}${rating} · ${classLabel(game.timeClass)}${delta}`;
       const href = game.url ? ` href="${escapeHtml(game.url)}" target="_blank" rel="noreferrer"` : '';
       const tag = game.url ? 'a' : 'span';
       const latest = index === games.length - 1;
@@ -730,8 +737,13 @@ function renderLiveGame() {
     return;
   }
   ui.livePill.hidden = false;
-  const label = CLASS_LABELS[liveGame.timeClass] ?? 'Партия';
-  ui.liveText.textContent = liveGame.opponent ? `${label} · против ${liveGame.opponent}` : `${label} · ваш ход`;
+  const label =
+    liveGame.timeClass && liveGame.timeClass !== 'unknown'
+      ? classLabel(liveGame.timeClass)
+      : t('player.liveFallback');
+  ui.liveText.textContent = liveGame.opponent
+    ? t('player.liveVs', { label, opponent: liveGame.opponent })
+    : t('player.liveYourTurn', { label });
   if (liveGame.url) {
     ui.liveText.href = liveGame.url;
     ui.liveText.removeAttribute('aria-disabled');
@@ -744,14 +756,14 @@ function renderLog(summary) {
   ui.logCount.textContent = summary.total ? `— ${summary.total}` : '';
 
   if (!summary.rows.length) {
-    ui.logBody.innerHTML = '<tr><td colspan="5" class="log-empty">Партий пока нет. Сыграйте — и они появятся здесь.</td></tr>';
+    ui.logBody.innerHTML = `<tr><td colspan="5" class="log-empty">${escapeHtml(t('log.empty'))}</td></tr>`;
     return;
   }
 
   ui.logBody.innerHTML = summary.rows
     .map((game) => {
       const date = new Date(game.endTime * 1000);
-      const when = date.toLocaleString('ru-RU', {
+      const when = date.toLocaleString(getLocale(), {
         day: '2-digit',
         month: '2-digit',
         hour: '2-digit',
@@ -768,9 +780,9 @@ function renderLog(summary) {
           : ` <span class="mono ${deltaClass(game.ratingDiff)}">${formatDelta(game.ratingDiff)}</span>`;
       return `<tr>
         <td class="mono">${escapeHtml(when)}</td>
-        <td>${game.color === 'white' ? 'белые' : 'чёрные'}</td>
+        <td>${game.color === 'white' ? t('color.white') : t('color.black')}</td>
         <td>${opponent}${opponentRating}</td>
-        <td class="res-${game.outcome}">${escapeHtml(OUTCOME_LABELS[game.outcome] ?? game.outcome)}</td>
+        <td class="res-${game.outcome}">${escapeHtml(outcomeLabel(game.outcome))}</td>
         <td class="mono">${rating}${delta}</td>
       </tr>`;
     })
@@ -794,7 +806,7 @@ function renderAnalytics() {
   renderPeriodChips();
 
   const summary = summarize(state, { timeClass: state.timeClass, period: state.period });
-  ui.analyticsStats.textContent = summary.total ? 'За выбранный период' : 'пока пусто';
+  ui.analyticsStats.textContent = summary.total ? t('analytics.selectedPeriod') : t('analytics.empty');
 
   renderChart(games);
   renderSortChips();
@@ -814,16 +826,17 @@ function chipMarkup(items, activeValue, name) {
 }
 
 function renderPeriodChips() {
-  const key = `${state.period}`;
+  const key = `${state.period}|${getLanguage()}`;
   if (ui.periodChips.dataset.key === key) return;
   ui.periodChips.dataset.key = key;
-  ui.periodChips.innerHTML = chipMarkup(PERIODS, state.period, 'period');
+  const items = PERIODS.map((period) => ({ id: period.id, label: periodLabel(period.id) }));
+  ui.periodChips.innerHTML = chipMarkup(items, state.period, 'period');
 }
 
 function renderSortChips() {
-  const items = Object.entries(SORT_LABELS).map(([id, label]) => ({ id, label }));
+  const items = ['rating', 'score'].map((id) => ({ id, label: sortLabel(id) }));
   const active = state.opponentsSort ?? 'rating';
-  const key = active;
+  const key = `${active}|${getLanguage()}`;
   if (ui.opponentsSort.dataset.key === key) return;
   ui.opponentsSort.dataset.key = key;
   ui.opponentsSort.innerHTML = items
@@ -851,25 +864,27 @@ function showChartTip(hit, clientX, clientY) {
     diffValue == null || !Number.isFinite(diffValue)
       ? ''
       : `<span class="chart-tip-diff ${deltaClass(diffValue)}">${formatDelta(diffValue)}</span>`;
-  const outcome = data.outcome ? OUTCOME_LABELS[data.outcome] ?? data.outcome : '';
-  const color = data.color === 'white' ? 'белые' : data.color === 'black' ? 'чёрные' : '';
+  const outcome = data.outcome ? outcomeLabel(data.outcome) : '';
+  const color = data.color === 'white' ? t('color.white') : data.color === 'black' ? t('color.black') : '';
   const outcomeLine = outcome
     ? `<div class="chart-tip-outcome ${data.outcome}">${escapeHtml(outcome)}${color ? ` · ${color}` : ''}</div>`
     : '';
 
   const details = [];
   if (data.opponent) {
-    details.push(`против ${escapeHtml(data.opponent)}${data.opponentRating ? ` (${data.opponentRating})` : ''}`);
+    details.push(t('tooltip.vs', {
+      name: `${escapeHtml(data.opponent)}${data.opponentRating ? ` (${data.opponentRating})` : ''}`,
+    }));
   }
-  const classLabel = data.timeClass ? CLASS_LABELS[data.timeClass] ?? data.timeClass : data.series;
-  if (classLabel) details.push(escapeHtml(classLabel));
+  const controlLabel = data.timeClass ? classLabel(data.timeClass) : data.series;
+  if (controlLabel) details.push(escapeHtml(controlLabel));
   const detailsLine = details.length ? `<div class="chart-tip-sub">${details.join(' · ')}</div>` : '';
 
   const date = new Date(Number(data.time) * 1000);
   const dateText =
     data.kind === 'month'
-      ? date.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
-      : date.toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      ? date.toLocaleDateString(getLocale(), { month: 'long', year: 'numeric' })
+      : date.toLocaleString(getLocale(), { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
   ui.chartTip.innerHTML = `<div class="chart-tip-value">${escapeHtml(data.rating)}${diff}</div>${outcomeLine}${detailsLine}<div class="chart-tip-date">${escapeHtml(dateText)}</div>`;
   ui.chartTip.hidden = false;
@@ -916,7 +931,7 @@ function renderChart(games) {
   hideChartTip();
   const chartGames = games.filter((game) => game.myRating != null);
   if (!chartGames.length) {
-    ui.chart.innerHTML = '<div class="chart-empty">Нет данных о рейтинге за выбранный период</div>';
+    ui.chart.innerHTML = `<div class="chart-empty">${escapeHtml(t('analytics.chartEmpty'))}</div>`;
     ui.chartCaption.textContent = '';
     ui.chartLegend.innerHTML = '';
     return;
@@ -946,7 +961,7 @@ function renderChart(games) {
     const series = classes
       .filter((timeClass) => byClass.get(timeClass).length >= 2)
       .map((timeClass) => ({
-        label: CLASS_LABELS[timeClass],
+        label: classLabel(timeClass),
         timeClass,
         color: CLASS_COLORS[timeClass],
         points: byClass.get(timeClass).map(toPoint).slice(-CHART_POINTS_LIMIT),
@@ -957,8 +972,16 @@ function renderChart(games) {
       ui.chart.innerHTML = buildRatingChart(series, { showOutcomes: false });
       ui.chartCaption.textContent =
         shown < chartGames.length
-          ? `${chartGames.length} партий · на графике последние ${shown}`
-          : `${chartGames.length} партий · ${series.length} контроля`;
+          ? t('analytics.chartMultiShown', {
+              count: chartGames.length,
+              games: gamesWord(chartGames.length),
+              shown,
+            })
+          : t('analytics.chartMulti', {
+              count: chartGames.length,
+              games: gamesWord(chartGames.length),
+              series: series.length,
+            });
       ui.chartLegend.innerHTML = series
         .map(
           (item) =>
@@ -976,7 +999,7 @@ function renderChart(games) {
 
   const points = chartSeries(byClass.get(targetClass) ?? []).slice(-CHART_POINTS_LIMIT);
   if (!points.length) {
-    ui.chart.innerHTML = '<div class="chart-empty">Нет данных о рейтинге за выбранный период</div>';
+    ui.chart.innerHTML = `<div class="chart-empty">${escapeHtml(t('analytics.chartEmpty'))}</div>`;
     ui.chartCaption.textContent = '';
     ui.chartLegend.innerHTML = '';
     return;
@@ -986,13 +1009,20 @@ function renderChart(games) {
   const last = points[points.length - 1];
   const delta = last.value - first.value;
   ui.chart.innerHTML = buildRatingChart(points);
-  ui.chartCaption.textContent = `${first.value} → ${last.value} (${formatDelta(delta)}) · ${points.length} партий · ${CLASS_LABELS[targetClass] ?? ''}`;
+  ui.chartCaption.textContent = t('analytics.chartSingle', {
+    from: first.value,
+    to: last.value,
+    delta: formatDelta(delta),
+    count: points.length,
+    games: gamesWord(points.length),
+    class: classLabel(targetClass),
+  });
   ui.chartLegend.innerHTML = '';
 }
 
 function renderOpponents(rows) {
   if (!rows.length) {
-    ui.opponentsBody.innerHTML = '<tr><td colspan="4" class="log-empty">Пока нет партий за этот период</td></tr>';
+    ui.opponentsBody.innerHTML = `<tr><td colspan="4" class="log-empty">${escapeHtml(t('analytics.periodEmpty'))}</td></tr>`;
     return;
   }
 
@@ -1012,7 +1042,7 @@ function renderOpponents(rows) {
 
 function renderOpenings(rows) {
   if (!rows.length) {
-    ui.openingsBody.innerHTML = '<tr><td colspan="4" class="log-empty">Пока нет партий за этот период</td></tr>';
+    ui.openingsBody.innerHTML = `<tr><td colspan="4" class="log-empty">${escapeHtml(t('analytics.periodEmpty'))}</td></tr>`;
     return;
   }
 
@@ -1021,7 +1051,7 @@ function renderOpenings(rows) {
       const eco = row.eco ? `<span class="eco">${escapeHtml(row.eco)}</span>` : '';
       const score = Math.round(row.score * 100);
       return `<tr>
-        <td class="cell-opening">${eco}<span class="opening-name">${escapeHtml(row.name ?? 'Без дебюта')}</span></td>
+        <td class="cell-opening">${eco}<span class="opening-name">${escapeHtml(row.name ?? t('opening.none'))}</span></td>
         <td class="mono num">${row.games}</td>
         <td class="mono small">${row.wins}–${row.losses}–${row.draws}</td>
         <td class="mono num ${score >= 50 ? 'up' : 'down'}">${score}%</td>
@@ -1058,13 +1088,13 @@ function renderInsights() {
   if (accuracy.avg == null) {
     ui.accuracyValue.textContent = '—';
     ui.accuracyValue.className = 'insight-value flat';
-    ui.accuracySub.textContent = 'Нет данных о точности за период';
+    ui.accuracySub.textContent = t('insights.accuracyEmpty');
   } else {
     ui.accuracyValue.textContent = `${accuracy.avg}%`;
     ui.accuracyValue.className = `insight-value ${accuracy.avg >= 75 ? 'up' : accuracy.avg < 65 ? 'down' : ''}`;
-    const parts = [`по ${accuracy.games} партиям`];
-    if (accuracy.winAvg != null) parts.push(`в победах ${accuracy.winAvg}%`);
-    if (accuracy.lossAvg != null) parts.push(`в поражениях ${accuracy.lossAvg}%`);
+    const parts = [t('insights.accuracySample', { count: accuracy.games })];
+    if (accuracy.winAvg != null) parts.push(t('insights.accuracyWin', { value: accuracy.winAvg }));
+    if (accuracy.lossAvg != null) parts.push(t('insights.accuracyLoss', { value: accuracy.lossAvg }));
     ui.accuracySub.textContent = parts.join(' · ');
   }
 
@@ -1078,7 +1108,7 @@ function renderColorStats(games) {
   const stats = computeColorStats(games);
   ui.colorStats.innerHTML = stats
     .map((row) => {
-      const label = row.color === 'white' ? 'Белые' : 'Чёрные';
+      const label = t(`color.${row.color}`);
       return `<div class="color-row">
         <span>${label}</span>
         <span class="color-bar"><span style="width:${Math.round(row.score * 100)}%; background:${row.color === 'white' ? 'var(--win)' : 'var(--accent)'}"></span></span>
@@ -1098,9 +1128,9 @@ function renderStreaks(games) {
         : '0';
 
   const rows = [
-    ['Сейчас', streaks.current.count ? `${current} ${OUTCOME_LABELS[streaks.current.outcome] ?? ''}` : '—'],
-    ['Лучшая серия побед', `${streaks.bestWin}`],
-    ['Без поражений', `${streaks.bestUnbeaten}`],
+    [t('insights.streakCurrent'), streaks.current.count ? `${current} ${outcomeLabel(streaks.current.outcome)}` : '—'],
+    [t('insights.streakBestWin'), `${streaks.bestWin}`],
+    [t('insights.streakUnbeaten'), `${streaks.bestUnbeaten}`],
   ];
 
   ui.streaks.innerHTML = rows
@@ -1115,14 +1145,14 @@ function renderTimeOfDay(games) {
   const buckets = computeTimeOfDay(games).filter((bucket) => bucket.games > 0);
 
   if (!buckets.length) {
-    ui.timeOfDay.innerHTML = '<div class="insight-sub">Пока нет партий за период</div>';
+    ui.timeOfDay.innerHTML = `<div class="insight-sub">${escapeHtml(t('insights.todEmpty'))}</div>`;
     return;
   }
 
   ui.timeOfDay.innerHTML = buckets
     .map(
       (bucket) => `<div class="tod-row">
-        <span>${bucket.label}</span>
+        <span>${escapeHtml(timeBucketLabel(bucket.id))}</span>
         <span class="tod-bar"><span style="width:${Math.round(bucket.score * 100)}%"></span></span>
         <span class="tod-value">${percent(bucket.score)}</span>
         <span class="tod-games">${bucket.games}</span>
@@ -1137,7 +1167,7 @@ function renderLongterm() {
 
   const loading = longterm.status === 'loading';
   ui.longtermBtn.disabled = loading || !state || state.demo;
-  ui.longtermBtn.textContent = loading ? 'Загружаю…' : 'За 12 месяцев';
+  ui.longtermBtn.textContent = loading ? t('insights.longtermLoading') : t('insights.longtermBtn');
 
   if (longterm.series) {
     const classes =
@@ -1148,7 +1178,7 @@ function renderLongterm() {
     const series = classes
       .filter((timeClass) => (longterm.series[timeClass] ?? []).length)
       .map((timeClass) => ({
-        label: CLASS_LABELS[timeClass],
+        label: classLabel(timeClass),
         timeClass,
         color: CLASS_COLORS[timeClass],
         points: longterm.series[timeClass],
@@ -1161,7 +1191,10 @@ function renderLongterm() {
         const last = item.points[item.points.length - 1];
         return `${item.label}: ${first.value} → ${last.value}`;
       });
-      ui.longtermCaption.textContent = `${parts.join(' · ')} · закешировано ${timeAgo(longterm.fetchedAt)}`;
+      ui.longtermCaption.textContent = t('insights.longtermCaption', {
+        parts: parts.join(' · '),
+        ago: timeAgo(longterm.fetchedAt),
+      });
       return;
     }
   }
@@ -1172,9 +1205,71 @@ function renderLongterm() {
     return;
   }
 
-  ui.longtermChart.innerHTML =
-    '<div class="chart-empty">Нажмите «За 12 месяцев», чтобы подгрузить историю рейтинга.</div>';
+  ui.longtermChart.innerHTML = `<div class="chart-empty">${escapeHtml(t('insights.longtermEmpty'))}</div>`;
   ui.longtermCaption.textContent = '';
+}
+
+/* ---------- язык ---------- */
+
+function renderLangSwitch() {
+  if (!ui.langSwitch) return;
+  const active = getLanguage();
+  ui.langSwitch.querySelectorAll('button[data-lang]').forEach((button) => {
+    const isActive = button.dataset.lang === active;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+}
+
+function renderQuote() {
+  const quote = pickQuote(getLanguage());
+  if (ui.quoteText) ui.quoteText.textContent = `«${quote.text}»`;
+  if (ui.quoteAuthor) ui.quoteAuthor.textContent = quote.author;
+}
+
+function detectLanguage() {
+  try {
+    const query = new URLSearchParams(window.location.search).get('lang');
+    if (query === 'ru' || query === 'en') return query;
+  } catch {
+    /* ignore */
+  }
+  try {
+    const saved = localStorage.getItem(LANG_STORAGE_KEY);
+    if (saved === 'ru' || saved === 'en') return saved;
+  } catch {
+    /* ignore */
+  }
+  const nav = String(navigator.languages?.[0] ?? navigator.language ?? '').toLowerCase();
+  return nav.startsWith('ru') ? 'ru' : nav ? 'en' : 'ru';
+}
+
+function applyLanguage(lang, { persist = true } = {}) {
+  setI18nLanguage(lang);
+  if (persist) {
+    try {
+      localStorage.setItem(LANG_STORAGE_KEY, lang);
+    } catch {
+      /* ignore */
+    }
+  }
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('lang', lang);
+    window.history.replaceState(null, '', url);
+  } catch {
+    /* ignore */
+  }
+
+  document.documentElement.lang = lang;
+  applyStaticTranslations();
+  renderLangSwitch();
+  renderQuote();
+  renderSiteTabs();
+  renderClassOptions();
+  filtersKey = '';
+  if (state) render();
+  else updateStatusText();
 }
 
 /* ---------- статус, карточка, CSV ---------- */
@@ -1184,24 +1279,32 @@ function updateStatusText() {
 
   if (state.demo) {
     ui.statusPill.dataset.tone = 'demo';
-    ui.statusText.textContent = 'демо-режим';
+    ui.statusText.textContent = t('status.demo');
     return;
   }
   if (syncing) {
     ui.statusPill.dataset.tone = 'sync';
-    ui.statusText.textContent = 'обновляю…';
+    ui.statusText.textContent = t('status.syncing');
     return;
   }
   if (lastError) {
     ui.statusPill.dataset.tone = 'error';
-    ui.statusText.textContent = 'нет связи, повторяю';
+    ui.statusText.textContent = t('status.error');
     return;
   }
   ui.statusPill.dataset.tone = 'live';
-  ui.statusText.textContent = `обновлено ${timeAgo(lastSyncAt)}`;
+  ui.statusText.textContent = t('status.updated', { ago: timeAgo(lastSyncAt) });
 }
 
 /* ---------- события ---------- */
+
+ui.langSwitch?.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-lang]');
+  if (!button) return;
+  const lang = button.dataset.lang;
+  if (!lang || lang === getLanguage()) return;
+  applyLanguage(lang);
+});
 
 ui.sitePicker?.addEventListener('click', (event) => {
   const button = event.target.closest('button[data-provider]');
@@ -1216,7 +1319,7 @@ ui.form.addEventListener('submit', (event) => {
   event.preventDefault();
   const name = ui.username.value.trim();
   if (!name) {
-    showAlert(ui.setupError, 'Введите имя пользователя.');
+    showAlert(ui.setupError, t('setup.enterUsername'));
     ui.username.focus();
     return;
   }
@@ -1276,9 +1379,12 @@ setInterval(updateStatusText, 1000);
   if (presetSite && PROVIDER_IDS.includes(presetSite)) selectedProvider = presetSite;
   if (presetUser) ui.username.value = presetUser.trim();
 
-  const quote = pickQuote();
-  if (ui.quoteText) ui.quoteText.textContent = `«${quote.text}»`;
-  if (ui.quoteAuthor) ui.quoteAuthor.textContent = quote.author;
+  const initialLang = detectLanguage();
+  setI18nLanguage(initialLang);
+  document.documentElement.lang = initialLang;
+  applyStaticTranslations();
+  renderLangSwitch();
+  renderQuote();
 
   if (params.get('demo') === '1') {
     state = createDemoState();
